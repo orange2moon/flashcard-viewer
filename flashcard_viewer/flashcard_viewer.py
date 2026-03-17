@@ -10,6 +10,7 @@ from queue import Queue
 from flashcard_viewer.data_storage import DataStorage, GalleryImage
 from flashcard_viewer.image_folder_browser import ImageFolderBrowser
 from flashcard_viewer.image_file_browser import ImageFileBrowser
+from flashcard_viewer.data_storage import SortOrder
 
 
 class FlashCardViewer(ttk.Frame):
@@ -25,11 +26,19 @@ class FlashCardViewer(ttk.Frame):
         self.gallery_canvas = None
         self.gallery_font = tkfont.Font(size=14, weight="bold")
         self.caption_font = tkfont.Font(size=85, weight="bold")
+        font_height = self.caption_font.metrics("linespace")
+        # Add some padding (e.g. the label's internal padding)
+        # 20px for breathing room
+        self.caption_font_clearance = font_height + 20
+
         self.setting_font = tkfont.Font(size=10, weight="bold")
         self.gallery_thumbs = {}
         self.root = root
         self.pack(fill=BOTH, expand=True)
         self.all_images_paths = []
+        self.show_height = 1000
+        self.show_width = 800
+        self.image_img = None
 
         # storage system
         self.storage = DataStorage()
@@ -49,7 +58,7 @@ class FlashCardViewer(ttk.Frame):
         self.current_image_index = 0
         self.current_image_index_max = 0
         self.current_photo = None
-        self.sort = None
+        self.sort = SortOrder(0)
         self.loop = True
         self.captions = True
         self.show_stinger = False
@@ -69,8 +78,6 @@ class FlashCardViewer(ttk.Frame):
         else:
             icon = Image.new("RGBA", (32, 32), (128, 128, 128, 255))
             self.settings_icon = ImageTk.PhotoImage(icon)
-
-        self.sort = self.storage.sort_style[0]
 
         # notebook
         self.noteb = ttk.Notebook(self, bootstyle="light")
@@ -422,10 +429,10 @@ class FlashCardViewer(ttk.Frame):
                 sid for sid, var in stinger_vars.items() if var.get()
             ]
             self.storage.update_gallery_settings(
-                gallery["id"],
-                gallery["path"],
+                id=gallery["id"],
+                path=gallery["path"],
                 name=name_var.get(),
-                sort=sort_var.get(),
+                sort=SortOrder.from_str(sort_var.get()),
                 loop=loop_var.get(),
                 captions=captions_var.get(),
                 stingers=selected_stingers,
@@ -522,14 +529,14 @@ class FlashCardViewer(ttk.Frame):
             misc_grid.columnconfigure(col, weight=1, uniform="misc_grid")
 
         ### SORT ORDER
-        gsort = gallery.get("sort", "Random").title()
+        gsort = gallery.get("sort", SortOrder.RANDOM).name.title()
         ttk.Label(misc_grid, text="Sort Order", font=self.setting_font).grid(
             row=0, column=0, padx=(0, 0), pady=2
         )
 
         sort_var = ttk.Combobox(
             misc_grid,
-            values=["Random", "Ascending", "Descending"],
+            values=[order.name.title() for order in SortOrder],
             state="readonly",
         )
         sort_var.grid(row=0, column=1, padx=(0, 0), pady=2)
@@ -679,14 +686,66 @@ class FlashCardViewer(ttk.Frame):
         )
         self.image_label.pack(fill=BOTH, expand=True)
         self.image_label.bind("<Button-1>", self.next_card)
+        # Fires on initial draw and any resize
+        frame.bind("<Configure>", self._on_frame_resize)
 
         return frame
+
+    def _on_frame_resize(self, event):
+        self.show_width = event.width
+        self.show_height = event.height
+        self._resize_image(self.show_width, self.show_height)
+        print(f"resized:{self.show_width}:{self.show_height}")
+
+    def _resize_image(self, width, height):
+        if self.image_img is None:
+            return
+
+        max_w = self.show_height - 185
+        max_h = self.show_width
+        # min_w = 800
+        # min_h = 600
+
+        w, h = self.image_img.size
+
+        scale = min(max_w / w, max_h / h)
+
+        # apply scaling
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+
+        # enforce minimum size if image is very small
+        #        if new_w < min_w and new_h < min_h:
+        #            scale = max(min_w / w, min_h / h)
+        #            new_w = int(w * scale)
+        #            new_h = int(h * scale)
+
+        img = self.image_img.resize((new_w, new_h), Image.LANCZOS)
+        self.current_photo = ImageTk.PhotoImage(img)
+
+        if self.captions:
+            self.image_label.configure(
+                image=self.current_photo,
+                text=self.image_name,
+                compound="top",
+            )
+        else:
+            self.image_label.configure(
+                image=self.current_photo,
+                text="",
+                compound="top",
+            )
 
     def open_gallery(self, path):
 
         gallery = self.storage.scan_gallery(Path(path))
         if not gallery or not gallery["valid"]:
             return
+
+        if len(self.current_images) > 0:
+            for gimage in self.current_images:
+                if gimage.img:
+                    gimage.img.close()
 
         self.current_gallery = gallery
         self.current_images = gallery["images"]
@@ -698,19 +757,21 @@ class FlashCardViewer(ttk.Frame):
         self.current_stingers = gallery["stingers"]
         self.use_stingers = True if len(self.current_stingers) > 0 else False
 
+        for gimage in self.current_images:
+            gimage.load()
+
         if not self.current_images:
             return
 
-        sort = self.sort.lower() if self.sort else "random"
-        if sort == "descending":
+        if self.sort == SortOrder.DESCENDING:
             self.current_images.sort(
                 key=lambda c: c.path.stem.lower(), reverse=True
             )
-        elif sort == "ascending":
+        elif self.sort == SortOrder.ASCENDING:
             self.current_images.sort(
                 key=lambda c: c.path.stem.lower(), reverse=False
             )
-        elif sort == "random":
+        elif self.sort == SortOrder.RANDOM:
             random.shuffle(self.current_images)
 
         self.current_image_index = 0
@@ -738,10 +799,16 @@ class FlashCardViewer(ttk.Frame):
                 self.current_image_index = 0
                 show_end = True
 
+        ## Choose an image
+
+        ## Ending Image
         if show_end:
             self.image_path = self.end_flashcard.path
             self.image_name = self.end_flashcard.name
+            self.image_img = self.end_flashcard.img
             self.show_stinger = False
+
+        ## Stinger Image
         elif (
             self.use_stingers
             and self.current_image_index > 0
@@ -751,34 +818,28 @@ class FlashCardViewer(ttk.Frame):
             selection = random.choice(self.current_stingers)
             self.image_path = selection["path"]
             self.image_name = selection["name"]
+            self.image_img = selection["img"]
             self.show_stinger = True
+
+        ## Gallery image
         else:
             selection = self.current_images[self.current_image_index]
             self.image_path = selection.path
             self.image_name = selection.name
+            self.image_img = selection.img
             self.show_stinger = False
 
-        img = Image.open(self.image_path)
-
         # target bounds
-        max_w = 1000
-        max_h = 800
-        min_w = 800
-        min_h = 600
-
+        img = self.image_img.copy()
         w, h = img.size
 
-        scale = min(max_w / w, max_h / h)
+        scale = min(
+            (self.show_width - self.caption_font_clearance) / w,
+            (self.show_height - self.caption_font_clearance) / h,
+        )
 
-        # apply scaling
         new_w = int(w * scale)
         new_h = int(h * scale)
-
-        # enforce minimum size if image is very small
-        if new_w < min_w and new_h < min_h:
-            scale = max(min_w / w, min_h / h)
-            new_w = int(w * scale)
-            new_h = int(h * scale)
 
         img = img.resize((new_w, new_h), Image.LANCZOS)
 

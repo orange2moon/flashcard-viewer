@@ -7,15 +7,46 @@ import tomllib
 import tomli_w
 import hashlib
 import math
-
+from enum import Enum
 
 from dataclasses import dataclass
 
+
+class SortOrder(Enum):
+    RANDOM = 0
+    DESCENDING = 1
+    ASCENDING = 2
+
+    @classmethod
+    def from_str(cls, sort_name: str):
+        #default
+        sort_style = cls.RANDOM
+        name = sort_name.upper()
+        for style in SortOrder:
+            if style.name == name:
+                sort_style = style
+
+        return sort_style
+
+    @classmethod
+    def from_int(cls, sort: int):
+        #default
+        sort_style = cls.RANDOM
+        for style in SortOrder:
+            if style.value == sort:
+                sort_style = style
+
+        return sort_style
 
 @dataclass
 class GalleryImage:
     path: Path
     name: str
+    img: Image
+
+    def load(self):
+        if self.path.exists():
+            self.img = Image.open(self.path) 
 
     def sort_key(self):
         return self.path.stem.lower()
@@ -36,8 +67,6 @@ class DataStorage:
         self.default_image_types = [".png", ".webp"]
         self.config = {}
 
-        self.sort_style = ["random", "descending", "ascending"]
-
         self.CACHE_DIR = (
             Path.home() / ".local" / "share" / "flashcard-viewer" / "cache"
         )
@@ -45,11 +74,10 @@ class DataStorage:
             Path.home() / ".local" / "share" / "flashcard-viewer" / "assets"
         )
         self.stinger_dir = self.CACHE_DIR / "stingers"
-        self.default_thumbnail = None
 
         end_path = self.ASSETS_DIR / "end_flashcard.png"
         end_name = "The End"
-        self.end_flashcard = GalleryImage(path=end_path, name=end_name)
+        self.end_flashcard = GalleryImage(path=end_path, name=end_name, img=None)
 
     def _draw_green_checkmark(self):
 
@@ -253,9 +281,12 @@ class DataStorage:
                 self.create_new_database()
 
         self._ensure_default_thumbnail()
+        self.default_thumbnail_image = Image.open(self.default_thumbnail)
         self._ensure_default_trash_icon()
         self._ensure_default_settings_icon()
         self._ensure_default_end_flashcard()
+        self.end_flashcard.load()
+
 
         if not self.config.get("percent"):
             self.config["percent"] = 20
@@ -270,16 +301,23 @@ class DataStorage:
                 (gallery_id, stinger_id),
             )
 
+
     def update_gallery_settings(
         self,
         id: int,
         path: Path,
         name: str,
-        sort: str,
+        sort: SortOrder,
         loop: bool,
         captions: bool,
-        stingers: dict,
+        stingers: list,
     ):
+        """save settings specific to a gallery
+        id: the gallery id, the one you are updating
+        path: the path to the gallery folder
+        name: the name of the gallery type
+        sort: a"""
+
         with sqlite3.connect(self.save_path) as conn:
             conn.execute(
                 """
@@ -290,7 +328,7 @@ class DataStorage:
                 (
                     name,
                     str(path.resolve()),
-                    self.sort_to_int(sort),
+                    sort.value,
                     loop,
                     captions,
                     id,
@@ -450,6 +488,10 @@ class DataStorage:
         stinger["name"] = name
         stinger["path"] = Path(path) if path else None
         stinger["icon"] = Path(icon) if icon else None
+        if stinger["path"].exists():
+            stinger["img"] = Image.open(stinger["path"])
+        else:
+            self.default_thumbnail_img
 
         return stinger
 
@@ -721,7 +763,7 @@ class DataStorage:
 
         named_images = self.get_images_for_path(path)
 
-        f_and_names = []
+        path_and_names = []
         for f in path.iterdir():
             if f.is_file() and f.suffix.lower() in self.config["image_types"]:
                 if named_images.get(str(f)):
@@ -729,21 +771,9 @@ class DataStorage:
                 else:
                     name = f.stem
 
-                f_and_names.append(GalleryImage(path=Path(f), name=name))
+                path_and_names.append(GalleryImage(path=Path(f), name=name, img=None))
 
-        return f_and_names
-
-    def sort_to_str(self, sort):
-        try:
-            return self.sort_style[sort]
-        except ValueError:
-            return self.sort_style[0]
-
-    def sort_to_int(self, sort):
-        try:
-            return self.sort_style.index(sort.lower())
-        except ValueError:
-            return 0
+        return path_and_names
 
     def gallery_query_to_dict(self, id, path, name, icon, sort, loop, captions):
         gallery = {}
@@ -752,7 +782,7 @@ class DataStorage:
         gallery["path"] = gallery_dir
         gallery["name"] = name
         gallery["icon"] = Path(icon) if icon else None
-        gallery["sort"] = self.sort_to_str(sort)
+        gallery["sort"] = SortOrder.from_int(sort)
         gallery["loop"] = True if loop == 1 else False
         gallery["captions"] = True if captions == 1 else False
         gallery["stingers"] = self.get_stingers_for_gallery(id)
