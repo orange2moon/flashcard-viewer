@@ -44,7 +44,7 @@ class FlashCardViewer(ttk.Frame):
         # storage system
         self.storage = DataStorage()
         self.storage.start()
-        self.default_thumbnail = Image.open(self.storage.default_thumbnail)
+        self.default_thumbnail_img = Image.open(self.storage.default_thumbnail)
 
         self.end_flashcard = self.storage.end_flashcard
         theme = self.storage.config.get("theme")
@@ -501,7 +501,7 @@ class FlashCardViewer(ttk.Frame):
             icon_img = Image.open(icon_path)
             icon_img.thumbnail((150, 150))
         else:
-            icon_img = self.default_thumbnail
+            icon_img = self.default_thumbnail_img
             icon_img.thumbnail((150, 150))
 
         self._settings_icon_photo = ImageTk.PhotoImage(icon_img)
@@ -633,17 +633,23 @@ class FlashCardViewer(ttk.Frame):
 
         self._settings_popup = frame
 
-    def get_gallery_thumbnail(self, gallery):
-        # Check in-memory cache first
+    def get_gallery_thumbnail(self, gallery:dict) -> ImageTk:
+        """Loads and caches gallery thumbnails"""
+
         path = gallery["path"]
-        if path in self.gallery_thumbs:
+        path = gallery.get("path")
+        if not path:
+            return ImageTk.PhotoImage(self.default_thumbnail_img)
+
+        ## Load cached file
+        elif path in self.gallery_thumbs:
             return self.gallery_thumbs[path]
 
         # Check if icon path is already stored in the database
         if gallery.get("icon") and gallery["icon"].exists():
-            thumb = ttk.PhotoImage(file=gallery["icon"])
+            thumb = ImageTk.PhotoImage(Image.open(gallery["icon"]))
         else:
-            thumb = ttk.PhotoImage(self.default_thumbnail)
+            thumb = ImageTk.PhotoImage(self.default_thumbnail_img)
 
         self.gallery_thumbs[path] = thumb
         return thumb
@@ -830,6 +836,9 @@ class FlashCardViewer(ttk.Frame):
             self.show_stinger = False
 
         # target bounds
+        if not self.image_img:
+            return
+
         img = self.image_img.copy()
         w, h = img.size
 

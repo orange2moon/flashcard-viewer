@@ -281,7 +281,7 @@ class DataStorage:
                 self.create_new_database()
 
         self._ensure_default_thumbnail()
-        self.default_thumbnail_image = Image.open(self.default_thumbnail)
+        self.default_thumbnail_img = Image.open(self.default_thumbnail)
         self._ensure_default_trash_icon()
         self._ensure_default_settings_icon()
         self._ensure_default_end_flashcard()
@@ -340,11 +340,13 @@ class DataStorage:
             self.add_stinger_to_gallery(id, stinger)
 
     def load_config(self):
+        has_config = True
         if not self.CONFIG_FILE.exists():
-            return {}
-
-        with open(self.CONFIG_FILE, "rb") as f:
-            mytoml = tomllib.load(f)
+            mytoml = {}
+            has_config = False
+        else:
+            with open(self.CONFIG_FILE, "rb") as f:
+                mytoml = tomllib.load(f)
 
         # last path
         last_path = mytoml.get("last_path", None)
@@ -488,10 +490,10 @@ class DataStorage:
         stinger["name"] = name
         stinger["path"] = Path(path) if path else None
         stinger["icon"] = Path(icon) if icon else None
-        if stinger["path"].exists():
+        if stinger["path"] and stinger["path"].exists():
             stinger["img"] = Image.open(stinger["path"])
         else:
-            self.default_thumbnail_img
+            stinger["img"] = self.default_thumbnail_img
 
         return stinger
 
@@ -529,7 +531,7 @@ class DataStorage:
                 SELECT id, path, name, icon FROM stingers
                 WHERE id = ?
                 """,
-                id,
+                (id,)
             )
             data = res.fetchone()
             if data:
@@ -552,7 +554,7 @@ class DataStorage:
 
         total = []
         for id in stinger_id_list:
-            stinger = self.get_stinger(id)
+            stinger = self.get_stinger(id[0])
             if stinger:
                 total.append(stinger)
 
@@ -648,11 +650,18 @@ class DataStorage:
                 "SELECT icon FROM stingers WHERE path = ?",
                 (str(path.resolve()),),
             )
-            icon_path = res.fetchone()[0]
+            has_icon_path = res.fetchone()
+
+            if has_icon_path:
+                icon_path = has_icon_path[0]
+            else:
+                icon_path = None
+
             conn.execute(
                 "DELETE FROM stingers WHERE path = ?",
                 (str(path.resolve()),),
             )
+
             if icon_path:
                 icon_path = Path(icon_path)
                 if icon_path != self.default_thumbnail:
@@ -701,11 +710,17 @@ class DataStorage:
                 "SELECT icon FROM galleries WHERE path = ?",
                 (str(path.resolve()),),
             )
-            icon_path = res.fetchone()[0]
+            row = res.fetchone()
+            if row:
+                icon_path = row[0]
+            else:
+                icon_path = None
+
             conn.execute(
                 "DELETE FROM galleries WHERE path = ?",
                 (str(path.resolve()),),
             )
+
             if icon_path:
                 icon_path = Path(icon_path)
                 if icon_path != self.default_thumbnail:
@@ -739,10 +754,11 @@ class DataStorage:
                 "SELECT id FROM galleries WHERE path = ?",
                 (str(gallery_path.resolve()),),
             )
-            row = res.fetchone()
-            if not row:
+            has_id = res.fetchone()
+            if not has_id:
                 return
-            gallery_id = row[0]
+
+            gallery_id = has_id[0]
             res = conn.execute(
                 "SELECT id FROM images WHERE gallery_id = ? AND ipath = ?",
                 (gallery_id, str(image_path.resolve())),
