@@ -30,6 +30,7 @@ class FlashCardViewer(ttk.Frame):
         # Add some padding (e.g. the label's internal padding)
         # 20px for breathing room
         self.caption_font_clearance = font_height + 20
+        self._resize_job = None
 
         self.setting_font = tkfont.Font(size=10, weight="bold")
         self.gallery_thumbs = {}
@@ -694,33 +695,32 @@ class FlashCardViewer(ttk.Frame):
     def _on_frame_resize(self, event):
         self.show_width = event.width
         self.show_height = event.height
-        self._resize_image(self.show_width, self.show_height)
-        print(f"resized:{self.show_width}:{self.show_height}")
+
+        if self._resize_job:
+            self.image_label.after_cancel(self._resize_job)
+
+        self._resize_job = self.image_label.after(
+            80, lambda: self._resize_image(self.show_width, self.show_height)
+        )
 
     def _resize_image(self, width, height):
         if self.image_img is None:
             return
 
-        max_w = self.show_height - 185
-        max_h = self.show_width
-        # min_w = 800
-        # min_h = 600
+        # target bounds
+        img = self.image_img.copy()
+        w, h = img.size
 
-        w, h = self.image_img.size
+        scale = min(
+            (self.show_width - self.caption_font_clearance) / w,
+            (self.show_height - self.caption_font_clearance) / h,
+        )
 
-        scale = min(max_w / w, max_h / h)
-
-        # apply scaling
         new_w = int(w * scale)
         new_h = int(h * scale)
 
-        # enforce minimum size if image is very small
-        #        if new_w < min_w and new_h < min_h:
-        #            scale = max(min_w / w, min_h / h)
-        #            new_w = int(w * scale)
-        #            new_h = int(h * scale)
+        img = img.resize((new_w, new_h), Image.LANCZOS)
 
-        img = self.image_img.resize((new_w, new_h), Image.LANCZOS)
         self.current_photo = ImageTk.PhotoImage(img)
 
         if self.captions:
