@@ -9,6 +9,8 @@ This is a flashcard viewer intended for ESL classrooms. That is, it has some fea
 2. Click on the gallery in the app
 3. Use the flashcards in activities and games.
 
+[Watch a demo](https://www.youtube.com/watch?v=9sNhd8m89tw)
+
 Need more? You can...
 - Choose to have labels displayed on your flashcard.
 - Choose to have a "stinger" flashcard displayed randomly during the game to cause a mixup in the way the game is played.
