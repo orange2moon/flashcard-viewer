@@ -1,0 +1,138 @@
+# ---------------------------
+
+# Python bytecode
+
+# ---------------------------
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ---------------------------
+
+# Virtual environments
+
+# ---------------------------
+
+.venv/
+venv/
+env/
+ENV/
+.virtualenv/
+
+# ---------------------------
+
+# Build / packaging
+
+# ---------------------------
+
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+pip-wheel-metadata/
+
+# ---------------------------
+
+# Installer logs
+
+# ---------------------------
+
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ---------------------------
+
+# Test / coverage
+
+# ---------------------------
+
+.coverage
+.coverage.*
+.cache/
+pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+htmlcov/
+
+# ---------------------------
+
+# Type checkers
+
+# ---------------------------
+
+.mypy_cache/
+.pyre/
+.pytype/
+
+# ---------------------------
+
+# Jupyter
+
+# ---------------------------
+
+.ipynb_checkpoints
+
+# ---------------------------
+
+# IDE / editors
+
+# ---------------------------
+
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ---------------------------
+
+# OS junk
+
+# ---------------------------
+
+.DS_Store
+Thumbs.db
+
+# ---------------------------
+
+# Logs
+
+# ---------------------------
+
+*.log
+
+# ---------------------------
+
+# Local config
+
+# ---------------------------
+
+.env
+.env.*
+*.local
+.python-version
+
+# ---------------------------
+
+# Database files
+
+# ---------------------------
+
+*.sqlite3
+*.db
+
+# ---------------------------
+
+# Temporary files
+
+# ---------------------------
+
+tmp/
+temp/
+notes.md
+notes2.txt
+/flashcard_viewer/migrate
