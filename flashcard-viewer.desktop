@@ -1,0 +1,8 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Flashcard Viewer
+Exec=INSTALL_PREFIX/flashcard-viewer
+Icon=flashcard-viewer
+Terminal=false
+Categories=Education;

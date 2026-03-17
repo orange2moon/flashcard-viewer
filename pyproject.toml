@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flashcard-viewer"
+version = "2026.03.12"
+description = "Displays images flashcard style"
+readme = "notes.md"
+requires-python = ">=3.9"
+
+authors = [
+{name = "Justin", email = "dabn5jhy1@mozmail.com"}
+]
+
+license = {text = "MIT"}
+
+classifiers = [
+"License :: OSI Approved :: MIT License",
+"Programming Language :: Python",
+"Programming Language :: Python :: 3",
+"Programming Language :: Python :: 3 :: Only",
+]
+
+keywords = ["flashcards", "images", "education", "viewer"]
+
+dependencies = [
+    "Pillow",
+    "ttkbootstrap",
+    "tomli-w"
+]
+
+[project.scripts]
+flashcard-viewer = "flashcard_viewer.flashcard_viewer:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["flashcard_viewer*"]
