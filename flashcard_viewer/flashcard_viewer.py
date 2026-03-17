@@ -1226,4 +1226,11 @@ def main():
 
 
 if __name__ == "__main__":
+    try:
+        import tkinter
+    except ImportError:
+        raise RuntimeError(
+            "tkinter is required but not installed. "
+            "On Linux, install python3-tk."
+        )
     main()

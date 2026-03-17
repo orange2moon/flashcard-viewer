@@ -6,28 +6,29 @@ build-backend = "setuptools.build_meta"
 name = "flashcard-viewer"
 version = "2026.03.12"
 description = "Displays images flashcard style"
-readme = "notes.md"
-requires-python = ">=3.9"
+readme = "README.MD"
+requires-python = ">=3.14,<3.15"
 
 authors = [
 {name = "Justin", email = "dabn5jhy1@mozmail.com"}
 ]
 
-license = {text = "MIT"}
+license = {text = "GPL-3.0-only"}
 
 classifiers = [
-"License :: OSI Approved :: MIT License",
-"Programming Language :: Python",
+"License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
 "Programming Language :: Python :: 3",
+"Programming Language :: Python :: 3.14",
 "Programming Language :: Python :: 3 :: Only",
 ]
 
-keywords = ["flashcards", "images", "education", "viewer"]
+keywords = ["flashcards", "teach", "instructional", "educational",]
 
 dependencies = [
     "Pillow",
     "ttkbootstrap",
-    "tomli-w"
+    "tomli-w",
+    "tkinter",
 ]
 
 [project.scripts]
