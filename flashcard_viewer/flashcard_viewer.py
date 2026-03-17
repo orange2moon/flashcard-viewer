@@ -819,7 +819,7 @@ class FlashCardViewer(ttk.Frame):
             self.use_stingers
             and self.current_image_index > 0
             and not self.show_stinger
-            and self.stinger_time(self.storage.config["percent"])
+            and self.stinger_time(self.storage.config.get("percent", 20))
         ):
             selection = random.choice(self.current_stingers)
             self.image_path = selection["path"]
@@ -957,7 +957,6 @@ class FlashCardViewer(ttk.Frame):
         def on_percent_change(*args):
             value = int(self.percent_meter.amountusedvar.get())
             self.storage.config["percent"] = value
-            self.storage.save_config()
 
         self.percent_meter.amountusedvar.trace_add("write", on_percent_change)
 
