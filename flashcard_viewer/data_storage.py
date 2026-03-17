@@ -469,7 +469,7 @@ class DataStorage:
                     gallery_id INTEGER NOT NULL,
                     ipath TEXT NOT NULL,
                     iname TEXT,
-                    FOREIGN KEY (gallery_id) REFERENCES galleries(id)
+                    FOREIGN KEY (gallery_id) REFERENCES galleries(id) ON DELETE CASCADE
                 )
             """)
 
@@ -478,8 +478,8 @@ class DataStorage:
                 CREATE TABLE IF NOT EXISTS gsting (
                     g_id INTEGER NOT NULL,
                     s_id INTEGER NOT NULL,
-                    FOREIGN KEY (g_id) REFERENCES galleries(id),
-                    FOREIGN KEY (s_id) REFERENCES stingers(id)
+                    FOREIGN KEY (g_id) REFERENCES galleries(id) ON DELETE CASCADE,
+                    FOREIGN KEY (s_id) REFERENCES stingers(id) ON DELETE CASCADE
                 )
             """)
 
