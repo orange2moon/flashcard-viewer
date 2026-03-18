@@ -5,7 +5,7 @@ from PIL import Image, ImageTk
 
 
 class ImageFolderBrowser(ttk.Toplevel):
-    def __init__(self, master, style, start_path=None):
+    def __init__(self, master, style, image_types=[".ping", ".webp"], start_path=None):
 
         super().__init__(master)
         self.title("Select Image Folder")
@@ -15,6 +15,7 @@ class ImageFolderBrowser(ttk.Toplevel):
         self.thumb_cache = {}
         self._hovered_item = None
         self._style = style
+        self.image_types = image_types
 
         self.current_path = Path(start_path) if start_path else Path.home()
 
@@ -168,8 +169,6 @@ class ImageFolderBrowser(ttk.Toplevel):
         for widget in self.preview_frame.winfo_children():
             widget.destroy()
 
-        image_types = {".png", ".jpg", ".jpeg", ".webp"}
-
         col = 0
         row = 0
 
@@ -182,7 +181,7 @@ class ImageFolderBrowser(ttk.Toplevel):
             if not file.is_file():
                 continue
 
-            if file.suffix.lower() not in image_types:
+            if file.suffix.lower() not in self.image_types:
                 continue
 
             thumb = self.get_thumbnail(file)

@@ -63,8 +63,8 @@ class DataStorage:
 
         self.CONFIG_DIR = Path.home() / ".config" / "flashcard-viewer"
         self.CONFIG_FILE = self.CONFIG_DIR / "config.toml"
-        self.allowed_image_types = [".png", ".jpg", ".webp"]
-        self.default_image_types = [".png", ".webp"]
+        self.allowed_image_types = {".png", ".jpg", ".webp", ".tiff"}
+        self.default_image_types = {".png", ".webp", ".jpg", ".tiff"}
         self.config = {}
 
         self.CACHE_DIR = (
@@ -357,11 +357,11 @@ class DataStorage:
         # image types
         image_types = mytoml.get("image_types")
         if image_types:
-            mytoml["image_types"] = [
-                t.lower()
+            mytoml["image_types"] = tuple(
+                t_lower
                 for t in image_types
-                if t.lower() in self.allowed_image_types
-            ]
+                if (t_lower := t.lower()) in self.allowed_image_types
+            )
 
         if not image_types:
             mytoml["image_types"] = self.default_image_types

@@ -6,6 +6,7 @@ from PIL import Image, ImageTk
 import tkinter.font as tkfont
 import threading
 from queue import Queue
+import time
 
 from flashcard_viewer.data_storage import DataStorage, GalleryImage
 from flashcard_viewer.image_folder_browser import ImageFolderBrowser
@@ -23,6 +24,7 @@ class FlashCardViewer(ttk.Frame):
         self.edit_button = None
         self.image_path = None
         self.image_name = None
+        self.use_stingers = False
         self.gallery_canvas = None
         self.gallery_font = tkfont.Font(size=14, weight="bold")
         self.caption_font = tkfont.Font(size=85, weight="bold")
@@ -53,6 +55,7 @@ class FlashCardViewer(ttk.Frame):
             self.style.theme_use(theme)
 
         # application state
+        self.use_stingers
         self._resize_job = None
         self.current_gallery = None
         self.current_images = []
@@ -83,6 +86,8 @@ class FlashCardViewer(ttk.Frame):
         # notebook
         self.noteb = ttk.Notebook(self, bootstyle="light")
 
+        super().bind("<space>", self.next_card)
+
         self.gallery_frame = self.gallery(self.noteb)
         self.show_frame = self.show(self.noteb)
         self.settings_frame = self.settings(self.noteb)
@@ -100,10 +105,15 @@ class FlashCardViewer(ttk.Frame):
 
     def on_tab_selection_changed(self, event):
         tab_text = self.noteb.tab("current", "text")
+        self.show_active = False
         if tab_text == "Gallery":
             self.refresh_gallery_grid()
+            
         elif tab_text == "Settings":
             self.refresh_stinger_grid()
+
+        elif tab_text == "Show":
+            self.show_active = True
 
     # -------------------------
     # Gallery View
@@ -633,7 +643,7 @@ class FlashCardViewer(ttk.Frame):
 
         self._settings_popup = frame
 
-    def get_gallery_thumbnail(self, gallery:dict) -> ImageTk:
+    def get_gallery_thumbnail(self, gallery: dict) -> ImageTk:
         """Loads and caches gallery thumbnails"""
 
         path = gallery["path"]
@@ -662,7 +672,10 @@ class FlashCardViewer(ttk.Frame):
     def add_gallery(self):
         self.edit_mode_off()
         last_path = self.storage.get_last_path()
-        browser = ImageFolderBrowser(self.root, self.style, last_path)
+        current_types = self.storage.config.get(
+            "image_types", self.storage.default_image_types
+        )
+        browser = ImageFolderBrowser(self.root, self.style, current_types, last_path)
         browser.protocol("WM_DELETE_WINDOW", browser.cancel)
         folder = browser.show()
 
@@ -754,13 +767,14 @@ class FlashCardViewer(ttk.Frame):
                     gimage.img.close()
 
         self.current_gallery = gallery
-        self.current_images = gallery["images"]
+        self.current_images = gallery.get("images", [])
         self.image_path = None
         self.image_name = None
-        self.sort = gallery["sort"]
-        self.loop = gallery["loop"]
-        self.captions = gallery["captions"]
-        self.current_stingers = gallery["stingers"]
+        self.image_img = None
+        self.sort = gallery.get("sort", SortOrder.RANDOM)
+        self.loop = gallery.get("loop", True)
+        self.captions = gallery.get("captions", True)
+        self.current_stingers = gallery.get("stingers")
         self.use_stingers = True if len(self.current_stingers) > 0 else False
 
         for gimage in self.current_images:
@@ -784,6 +798,7 @@ class FlashCardViewer(ttk.Frame):
         self.current_image_index_max = len(self.current_images)
 
         self.noteb.select(self.show_frame)
+        self.show_active = True
         self.next_card()
 
     def stinger_time(self, percent):
@@ -795,6 +810,9 @@ class FlashCardViewer(ttk.Frame):
         return random.random() < percent / 100
 
     def next_card(self, event=None):
+
+        if not self.show_active:
+            return
 
         show_end = False
         if self.loop:
@@ -828,12 +846,15 @@ class FlashCardViewer(ttk.Frame):
             self.show_stinger = True
 
         ## Gallery image
-        else:
+        elif len(self.current_images) > 0:
+        #else:
             selection = self.current_images[self.current_image_index]
             self.image_path = selection.path
             self.image_name = selection.name
             self.image_img = selection.img
             self.show_stinger = False
+        else:
+            return
 
         # target bounds
         if not self.image_img:
@@ -1221,6 +1242,7 @@ def main():
         root.geometry("970x970")
 
     app = FlashCardViewer(root)
+    root.bind("<space>", app.next_card)
     root.protocol("WM_DELETE_WINDOW", app.shutdown)
     root.mainloop()
 
