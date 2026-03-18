@@ -70,17 +70,23 @@ class ImageFolderBrowser(ttk.Toplevel):
                 scrollregion=self.preview_canvas.bbox("all")
             ),
         )
-
         btn_frame = ttk.Frame(self)
         btn_frame.grid(
-            row=2, column=0, columnspan=2, sticky="e", pady=10, padx=10
+            row=2, column=0, columnspan=2, sticky="ew", pady=10, padx=10
         )
 
-        ttk.Button(btn_frame, text="Cancel", command=self.cancel).pack(
+        types_text = " ".join(self.image_types)
+        ttk.Label(btn_frame, text=f"Image types: {types_text}").pack(side=LEFT)
+
+        # Right button group
+        button_group = ttk.Frame(btn_frame)
+        button_group.pack(side=RIGHT)
+
+        ttk.Button(button_group, text="Cancel", command=self.cancel).pack(
             side=RIGHT, padx=5
         )
 
-        ttk.Button(btn_frame, text="Select Folder", command=self.confirm).pack(
+        ttk.Button(button_group, text="Select Folder", command=self.confirm).pack(
             side=RIGHT
         )
 
@@ -217,7 +223,6 @@ class ImageFolderBrowser(ttk.Toplevel):
     # Result
     # ----------------------------
     def cancel(self):
-        print("User canceled")
         self.selected_path = None
         self.destroy()
 
