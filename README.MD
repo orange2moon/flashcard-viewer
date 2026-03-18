@@ -2,7 +2,6 @@
 
 This is a flashcard viewer intended for ESL classrooms. That is, it has some features that only ESL teachers would find useful. If this is not you, no need to read any further.
 
-
 ## How it works
 
 1. Add a gallery of flashcards
@@ -25,12 +24,10 @@ I will probably change this behavior soon because it can be confusing.
 
 ## Requirements
 
-You need the following python packages.
-
-- Python 3.9+
-- Pillow
-- ttkbootstrap
-- tomli-w
+1. Python 3.14+
+2. tkinter
+    - On Fedora this is the package "python3-tkinter"
+    - It is a standard python library, but it is not always included in the interpreter distribution.
 
 ## Install
 
@@ -40,7 +37,7 @@ Installation is easy if you are on Linux with the GNOME desktop and if you know 
 git clone https://github.com/orange2moon/flashcard-viewer
 git@github.com:orange2moon/flashcard-viewer.git
 cd flashcard-viewer
-pipx install . --force
+pipx install .
 linux-gnome-install.sh
 ```
 

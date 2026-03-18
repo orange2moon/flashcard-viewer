@@ -28,7 +28,6 @@ dependencies = [
     "Pillow",
     "ttkbootstrap",
     "tomli-w",
-    "tkinter",
 ]
 
 [project.scripts]
