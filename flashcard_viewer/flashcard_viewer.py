@@ -26,6 +26,7 @@ from flashcard_viewer.data_storage import SortOrder
 class FlashCardViewer(ttk.Frame):
     def __init__(self, root):
         super().__init__(root)
+        self.root = root
         self.style = ttk.Style()
         self.edit_mode = False
         self.stinger_edit_mode = False
@@ -75,6 +76,7 @@ class FlashCardViewer(ttk.Frame):
         self.captions = True
         self.show_stinger = False
         self.new_config = False
+        self.is_fullscreen = False
 
         # Trash icon for the gallery
         trash_icon_path = self.storage.config["trash_icon_path"]
@@ -111,6 +113,13 @@ class FlashCardViewer(ttk.Frame):
         # initial gallery load
         # self.load_gallery_view()
         # self.refresh_gallery_grid(new=True)
+    def toggle_fullscreen(self, event=None):
+        self.is_fullscreen = not self.is_fullscreen
+        self.root.attributes("-fullscreen", self.is_fullscreen)
+
+    def exit_fullscreen(self, event=None):
+        self.is_fullscreen = False
+        self.root.attributes("-fullscreen", False)
 
     def on_tab_selection_changed(self, event):
         if self.new_config:
@@ -1264,6 +1273,8 @@ def main():
 
     app = FlashCardViewer(root)
     root.bind("<space>", app.next_card)
+    root.bind("<f>", app.toggle_fullscreen)
+    root.bind("<Escape>", app.exit_fullscreen)
     root.protocol("WM_DELETE_WINDOW", app.shutdown)
     root.mainloop()
 
