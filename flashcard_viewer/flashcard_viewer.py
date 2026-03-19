@@ -1,3 +1,10 @@
+try:
+    import tkinter
+except ImportError:
+    raise RuntimeError(
+        "tkinter is required but not installed. "
+        "On Linux, install python3-tkinter"
+    )
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from pathlib import Path
@@ -1260,11 +1267,4 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        import tkinter
-    except ImportError:
-        raise RuntimeError(
-            "tkinter is required but not installed. "
-            "On Linux, install python3-tkinter"
-        )
     main()
