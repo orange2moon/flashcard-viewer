@@ -45,7 +45,6 @@ class FlashCardViewer(ttk.Frame):
 
         self.setting_font = tkfont.Font(size=10, weight="bold")
         self.gallery_thumbs = {}
-        self.root = root
         self.pack(fill=BOTH, expand=True)
         self.all_images_paths = []
         self.show_height = 1000
@@ -96,8 +95,6 @@ class FlashCardViewer(ttk.Frame):
 
         # notebook
         self.noteb = ttk.Notebook(self, bootstyle="light")
-
-        super().bind("<space>", self.next_card)
 
         self.gallery_frame = self.gallery(self.noteb)
         self.show_frame = self.show(self.noteb)
@@ -1273,7 +1270,7 @@ def main():
 
     app = FlashCardViewer(root)
     root.bind("<space>", app.next_card)
-    root.bind("<f>", app.toggle_fullscreen)
+    root.bind("<Control-f>", app.toggle_fullscreen)
     root.bind("<Escape>", app.exit_fullscreen)
     root.protocol("WM_DELETE_WINDOW", app.shutdown)
     root.mainloop()
