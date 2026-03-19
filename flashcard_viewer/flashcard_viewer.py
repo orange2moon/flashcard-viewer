@@ -5,6 +5,7 @@ except ImportError:
         "tkinter is required but not installed. "
         + "On Linux, install python3-tkinter"
     )
+    exit(1)
 
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
