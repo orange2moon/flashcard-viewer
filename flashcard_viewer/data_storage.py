@@ -63,8 +63,8 @@ class DataStorage:
 
         self.CONFIG_DIR = Path.home() / ".config" / "flashcard-viewer"
         self.CONFIG_FILE = self.CONFIG_DIR / "config.toml"
-        self.allowed_image_types = {".png", ".jpg", ".webp", ".tiff"}
-        self.default_image_types = {".png", ".webp", ".jpg", ".tiff"}
+        self.allowed_image_types = [".png", ".jpg", ".webp", ".tiff"]
+        self.default_image_types = [".png", ".webp", ".jpg", ".tiff"]
         self.config = {}
 
         self.CACHE_DIR = (
@@ -288,7 +288,11 @@ class DataStorage:
         self.end_flashcard.load()
 
 
-        if not self.config.get("percent"):
+        percent = self.config.get("percent", None)
+
+        if percent is None:
+            self.config["percent"] = 20
+        elif not (0 <= percent <= 100):
             self.config["percent"] = 20
 
     def get_last_path(self):
@@ -354,14 +358,26 @@ class DataStorage:
             p = Path(last_path)
             mytoml["last_path"] = p if p.is_dir() else None
 
+        #  trash_icon_path
+        my_path = mytoml.get("trash_icon_path", None)
+        if my_path:
+            p = Path(my_path)
+            mytoml["trash_icon_path"] = p if p.is_dir() else None
+
+        #  settings_icon_path
+        my_path = mytoml.get("settings_icon_path", None)
+        if my_path:
+            p = Path(my_path)
+            mytoml["settings_icon_path"] = p if p.is_dir() else None
+
         # image types
         image_types = mytoml.get("image_types")
         if image_types:
-            mytoml["image_types"] = tuple(
+            mytoml["image_types"] = [
                 t_lower
                 for t in image_types
                 if (t_lower := t.lower()) in self.allowed_image_types
-            )
+            ]
 
         if not image_types:
             mytoml["image_types"] = self.default_image_types
@@ -375,6 +391,7 @@ class DataStorage:
         serializable = {
             key: str(value) if isinstance(value, Path) else value
             for key, value in self.config.items()
+            if value is not None
         }
 
         with open(self.CONFIG_FILE, "wb") as f:

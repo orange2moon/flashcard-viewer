@@ -24,7 +24,6 @@ class FlashCardViewer(ttk.Frame):
         self.edit_button = None
         self.image_path = None
         self.image_name = None
-        self.use_stingers = False
         self.gallery_canvas = None
         self.gallery_font = tkfont.Font(size=14, weight="bold")
         self.caption_font = tkfont.Font(size=85, weight="bold")
@@ -55,7 +54,7 @@ class FlashCardViewer(ttk.Frame):
             self.style.theme_use(theme)
 
         # application state
-        self.use_stingers
+        self.use_stingers = False
         self._resize_job = None
         self.current_gallery = None
         self.current_images = []
@@ -95,7 +94,7 @@ class FlashCardViewer(ttk.Frame):
 
         self.noteb.add(self.gallery_frame, text="Gallery")
         self.noteb.add(self.show_frame, text="Show")
-        self.noteb.add(self.settings_frame, text="App Settings")
+        self.noteb.add(self.settings_frame, text="Settings")
 
         self.noteb.pack(fill=BOTH, expand=True)
         self.noteb.bind("<<NotebookTabChanged>>", self.on_tab_selection_changed)
