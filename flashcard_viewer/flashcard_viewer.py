@@ -1,10 +1,11 @@
 try:
     import tkinter
 except ImportError:
-    raise RuntimeError(
+    print(
         "tkinter is required but not installed. "
-        "On Linux, install python3-tkinter"
+        + "On Linux, install python3-tkinter"
     )
+
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from pathlib import Path
