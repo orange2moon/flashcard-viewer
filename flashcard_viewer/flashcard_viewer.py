@@ -66,6 +66,7 @@ class FlashCardViewer(ttk.Frame):
         self.loop = True
         self.captions = True
         self.show_stinger = False
+        self.new_config = False
 
         # Trash icon for the gallery
         trash_icon_path = self.storage.config["trash_icon_path"]
@@ -104,11 +105,15 @@ class FlashCardViewer(ttk.Frame):
         # self.refresh_gallery_grid(new=True)
 
     def on_tab_selection_changed(self, event):
+        if self.new_config:
+            self.storage.save_config()
+            self.new_config = False
+
         tab_text = self.noteb.tab("current", "text")
         self.show_active = False
         if tab_text == "Gallery":
             self.refresh_gallery_grid()
-            
+
         elif tab_text == "Settings":
             self.refresh_stinger_grid()
 
@@ -675,7 +680,9 @@ class FlashCardViewer(ttk.Frame):
         current_types = self.storage.config.get(
             "image_types", self.storage.default_image_types
         )
-        browser = ImageFolderBrowser(self.root, self.style, current_types, last_path)
+        browser = ImageFolderBrowser(
+            self.root, self.style, current_types, last_path
+        )
         browser.protocol("WM_DELETE_WINDOW", browser.cancel)
         folder = browser.show()
 
@@ -847,7 +854,7 @@ class FlashCardViewer(ttk.Frame):
 
         ## Gallery image
         elif len(self.current_images) > 0:
-        #else:
+            # else:
             selection = self.current_images[self.current_image_index]
             self.image_path = selection.path
             self.image_name = selection.name
@@ -898,8 +905,8 @@ class FlashCardViewer(ttk.Frame):
         frame = ttk.Frame(notebook, padding=10)
 
         ## --- Theme ---
-        themes = self.style.theme_names()
-        theme_var = ttk.StringVar(value=self.style.theme_use())
+        themes = [t.title() for t in self.style.theme_names()]
+        theme_var = ttk.StringVar(value=self.style.theme_use().title())
 
         ttk.Label(frame, text="Theme", font=self.gallery_font).pack(
             anchor=W, pady=(20, 15)
@@ -916,11 +923,12 @@ class FlashCardViewer(ttk.Frame):
         theme_box.pack(anchor=W, padx=50, pady=(0, 20))
 
         def change_theme(event=None):
-            theme = theme_var.get()
+            theme = theme_var.get().lower()
             self.style.theme_use(theme)
             self.storage.config["theme"] = theme
-            self.storage.save_config()
+            # update the grid so the background changes
             self.refresh_stinger_grid()
+            self.new_config = True
 
         theme_box.bind("<<ComboboxSelected>>", change_theme)
 
@@ -930,6 +938,7 @@ class FlashCardViewer(ttk.Frame):
                 ext for ext, var in self._image_type_vars.items() if var.get()
             ]
             self.storage.config["image_types"] = selected
+            self.new_config = True
 
         ttk.Label(frame, text="Image Types", font=self.gallery_font).pack(
             anchor=W, pady=(0, 5)
@@ -978,6 +987,7 @@ class FlashCardViewer(ttk.Frame):
         def on_percent_change(*args):
             value = int(self.percent_meter.amountusedvar.get())
             self.storage.config["percent"] = value
+            self.new_config = True
 
         self.percent_meter.amountusedvar.trace_add("write", on_percent_change)
 
@@ -1030,6 +1040,8 @@ class FlashCardViewer(ttk.Frame):
         return frame
 
     def save_app_settings(self):
+        # not actually called
+        # keep this code just in case I need it later
         selected = [
             ext for ext, var in self._image_type_vars.items() if var.get()
         ]
@@ -1037,7 +1049,8 @@ class FlashCardViewer(ttk.Frame):
         self.storage.config["percent"] = int(
             self.percent_meter.amountusedvar.get()
         )
-        self.storage.save_config()
+        self.new_config = True
+        # settings save in on_tab_selection_changed()
 
     def add_stinger(self):
         if len(self.storage.list_stingers()) >= 10:
@@ -1253,6 +1266,6 @@ if __name__ == "__main__":
     except ImportError:
         raise RuntimeError(
             "tkinter is required but not installed. "
-            "On Linux, install python3-tk."
+            "On Linux, install python3-tkinter"
         )
     main()
