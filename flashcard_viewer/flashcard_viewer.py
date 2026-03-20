@@ -1,5 +1,5 @@
 try:
-    import tkinter
+    import tkinter as tk
 except ImportError:
     print(
         "tkinter is required but not installed. "
@@ -35,6 +35,7 @@ class FlashCardViewer(ttk.Frame):
         self.image_path = None
         self.image_name = None
         self.gallery_canvas = None
+        self.selected_font = None
         self.gallery_font = tkfont.Font(size=14, weight="bold")
         self.caption_font = tkfont.Font(size=85, weight="bold")
         font_height = self.caption_font.metrics("linespace")
@@ -100,8 +101,8 @@ class FlashCardViewer(ttk.Frame):
         self.show_frame = self.show(self.noteb)
         self.settings_frame = self.settings(self.noteb)
 
-        self.noteb.add(self.gallery_frame, text="Gallery")
-        self.noteb.add(self.show_frame, text="Show")
+        self.noteb.add(self.gallery_frame, text="Collections")
+        self.noteb.add(self.show_frame, text="Present")
         self.noteb.add(self.settings_frame, text="Settings")
 
         self.noteb.pack(fill=BOTH, expand=True)
@@ -110,6 +111,7 @@ class FlashCardViewer(ttk.Frame):
         # initial gallery load
         # self.load_gallery_view()
         # self.refresh_gallery_grid(new=True)
+
     def toggle_fullscreen(self, event=None):
         self.is_fullscreen = not self.is_fullscreen
         self.root.attributes("-fullscreen", self.is_fullscreen)
@@ -125,13 +127,13 @@ class FlashCardViewer(ttk.Frame):
 
         tab_text = self.noteb.tab("current", "text")
         self.show_active = False
-        if tab_text == "Gallery":
+        if tab_text == "Collections":
             self.refresh_gallery_grid()
 
         elif tab_text == "Settings":
             self.refresh_stinger_grid()
 
-        elif tab_text == "Show":
+        elif tab_text == "Present":
             self.show_active = True
 
     # -------------------------
@@ -712,6 +714,9 @@ class FlashCardViewer(ttk.Frame):
                 # self.load_gallery_view()
                 self.refresh_gallery_grid(new=True)
 
+    def update_font(self, *args):
+        self.caption_font.config(family=self.selected_font.get())
+
     # -------------------------
     # Show Flashcards
     # -------------------------
@@ -918,7 +923,40 @@ class FlashCardViewer(ttk.Frame):
     def settings(self, notebook):
         frame = ttk.Frame(notebook, padding=10)
 
+        ### Theme and Label Font
+        #   | theme  | Font  | Font preview
         ## --- Theme ---
+
+        ttk.Label(frame, text="Font", font=self.gallery_font).pack(
+            anchor=W, pady=(20, 15)
+        )
+
+        fonts = list(tkfont.families())
+        fonts.sort()
+
+        self.selected_font = tk.StringVar(value=fonts[0])
+        self.selected_font.trace_add("write", self.update_font)
+
+        font_row = ttk.Frame(frame)
+        font_row.pack(anchor=W, pady=(2, 5))
+        font_row.columnconfigure(0, weight=1, uniform="font_row")
+        # font_row.columnconfigure(1, weight=1, uniform="font_row")
+
+        font_box = ttk.Combobox(
+            font_row,
+            textvariable=self.selected_font,
+            values=[afont for afont in fonts],
+            state="readonly",
+        )
+
+        font_box.grid(row=0, column=0, padx=(10, 10), pady=(10, 10))
+
+        label_preview = ttk.Label(
+            font_row, text="Image Label", font=self.caption_font
+        )
+        label_preview.grid(row=0, column=1, padx=(10, 10), pady=(10, 10))
+
+
         themes = [t.title() for t in self.style.theme_names()]
         theme_var = ttk.StringVar(value=self.style.theme_use().title())
 
