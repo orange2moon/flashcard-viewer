@@ -8,6 +8,7 @@ import tomli_w
 import hashlib
 import math
 from enum import Enum
+import tkinter.font as tkfont
 
 from dataclasses import dataclass
 
@@ -215,21 +216,15 @@ class DataStorage:
             img.save(self.default_thumbnail)
 
     def _ensure_default_trash_icon(self):
-        if not self.config["trash_icon_path"]:
+        if not isinstance(self.config.get("trash_icon_path"), Path):
             return
 
-        elif not isinstance(self.config["trash_icon_path"], Path):
-            return
-
-        elif not self.config["trash_icon_path"].exists():
+        elif not self.config.get("trash_icon_path").exists():
             img = self._draw_trash_icon()
-            img.save(self.config["trash_icon_path"])
+            img.save(self.config.get("trash_icon_path"))
 
     def _ensure_default_settings_icon(self):
-        if not self.config["settings_icon_path"]:
-            return
-
-        elif not isinstance(self.config["settings_icon_path"], Path):
+        if not isinstance(self.config.get("settings_icon_path"), Path):
             return
 
         elif not self.config["settings_icon_path"].exists():
@@ -362,13 +357,13 @@ class DataStorage:
         my_path = mytoml.get("trash_icon_path", None)
         if my_path:
             p = Path(my_path)
-            mytoml["trash_icon_path"] = p if p.is_dir() else None
+            mytoml["trash_icon_path"] = p if p.is_file() else None
 
         #  settings_icon_path
         my_path = mytoml.get("settings_icon_path", None)
         if my_path:
             p = Path(my_path)
-            mytoml["settings_icon_path"] = p if p.is_dir() else None
+            mytoml["settings_icon_path"] = p if p.is_file() else None
 
         # image types
         image_types = mytoml.get("image_types")
@@ -438,7 +433,7 @@ class DataStorage:
                 """)
                 tables = {row[0] for row in cur.fetchall()}
 
-                required_tables = {"galleries", "stingers", "images"}
+                required_tables = {"galleries", "stingers", "images", "gsting"}
                 missing_tables = required_tables - tables
 
                 if missing_tables:
@@ -503,14 +498,12 @@ class DataStorage:
     def stinger_dict(self, id, path, name, icon):
         stinger = {}
 
+        path = Path(path) if path else None
+
         stinger["id"] = id
-        stinger["name"] = name
-        stinger["path"] = Path(path) if path else None
+        stinger["image"] = GalleryImage(path=path, name=name, img=self.default_thumbnail_img)
+        stinger["image"].load()
         stinger["icon"] = Path(icon) if icon else None
-        if stinger["path"] and stinger["path"].exists():
-            stinger["img"] = Image.open(stinger["path"])
-        else:
-            stinger["img"] = self.default_thumbnail_img
 
         return stinger
 

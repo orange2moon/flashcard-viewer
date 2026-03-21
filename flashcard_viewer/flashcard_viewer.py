@@ -32,10 +32,9 @@ class FlashCardViewer(ttk.Frame):
         self.stinger_edit_mode = False
         self.galleries = None
         self.edit_button = None
-        self.image_path = None
-        self.image_name = None
         self.gallery_canvas = None
         self.selected_font = None
+        self.preview_canvas = None
         self.gallery_font = tkfont.Font(size=14, weight="bold")
         self.caption_font = tkfont.Font(size=85, weight="bold")
         font_height = self.caption_font.metrics("linespace")
@@ -47,14 +46,17 @@ class FlashCardViewer(ttk.Frame):
         self.setting_font = tkfont.Font(size=10, weight="bold")
         self.gallery_thumbs = {}
         self.pack(fill=BOTH, expand=True)
-        self.all_images_paths = []
         self.show_height = 1000
         self.show_width = 800
-        self.image_img = None
+
+        self.fonts = list(tkfont.families())
+        self.fonts.sort()
 
         # storage system
         self.storage = DataStorage()
         self.storage.start()
+        self.set_font()
+
         self.default_thumbnail_img = Image.open(self.storage.default_thumbnail)
 
         self.end_flashcard = self.storage.end_flashcard
@@ -66,8 +68,8 @@ class FlashCardViewer(ttk.Frame):
         # application state
         self.use_stingers = False
         self._resize_job = None
-        self.current_gallery = None
         self.current_images = []
+        self.current_image = None
         self.current_image_index = 0
         self.current_image_index_max = 0
         self.current_photo = None
@@ -77,6 +79,7 @@ class FlashCardViewer(ttk.Frame):
         self.show_stinger = False
         self.new_config = False
         self.is_fullscreen = False
+        self.show_active = False
 
         # Trash icon for the gallery
         trash_icon_path = self.storage.config["trash_icon_path"]
@@ -96,6 +99,8 @@ class FlashCardViewer(ttk.Frame):
 
         # notebook
         self.noteb = ttk.Notebook(self, bootstyle="light")
+        self.noteb.unbind_class("TNotebook", "<Left>")
+        self.noteb.unbind_class("TNotebook", "<Right>")
 
         self.gallery_frame = self.gallery(self.noteb)
         self.show_frame = self.show(self.noteb)
@@ -135,6 +140,11 @@ class FlashCardViewer(ttk.Frame):
 
         elif tab_text == "Present":
             self.show_active = True
+
+    def set_font(self):
+        font = self.storage.config.get("font", None)
+        if font and font in self.fonts:
+            self.caption_font.config(family=font)
 
     # -------------------------
     # Gallery View
@@ -214,7 +224,7 @@ class FlashCardViewer(ttk.Frame):
 
         add_button = ttk.Button(
             button_bar,
-            text="+ Add Gallery",
+            text="+ Add Collection",
             bootstyle=SUCCESS,
             command=self.add_gallery,
         )
@@ -256,7 +266,7 @@ class FlashCardViewer(ttk.Frame):
         canvas = self.gallery_canvas
         canvas.delete("all")
 
-        if new or self.galleries == None:
+        if new or self.galleries is None:
             self.galleries = self.storage.list_galleries()
 
         tile_width = 160
@@ -391,6 +401,8 @@ class FlashCardViewer(ttk.Frame):
 
         # update gallery
         gallery = self.storage.scan_gallery(gallery["path"])
+        if gallery is None:
+            return
         popup_w = 800
         popup_h = 900
         radius = 15
@@ -608,7 +620,7 @@ class FlashCardViewer(ttk.Frame):
             stinger_vars[stinger["id"]] = var
             ttk.Checkbutton(
                 stinger_grid,
-                text=stinger["name"][:16],
+                text=stinger["image"].name[:16],
                 variable=var,
             ).grid(row=i // 3, column=i % 3, sticky=W, padx=(0, 10), pady=2)
 
@@ -667,7 +679,6 @@ class FlashCardViewer(ttk.Frame):
     def get_gallery_thumbnail(self, gallery: dict) -> ImageTk:
         """Loads and caches gallery thumbnails"""
 
-        path = gallery["path"]
         path = gallery.get("path")
         if not path:
             return ImageTk.PhotoImage(self.default_thumbnail_img)
@@ -716,6 +727,7 @@ class FlashCardViewer(ttk.Frame):
 
     def update_font(self, *args):
         self.caption_font.config(family=self.selected_font.get())
+        self.storage.config["font"] = self.selected_font.get()
 
     # -------------------------
     # Show Flashcards
@@ -749,15 +761,18 @@ class FlashCardViewer(ttk.Frame):
         )
 
     def _resize_image(self, width, height):
-        if self.image_img is None:
+        if self.current_image is None:
+            return
+
+        if self.current_image.img is None:
             return
 
         # target bounds
-        img = self.image_img.copy()
+        img = self.current_image.img.copy()
         w, h = img.size
 
         scale = min(
-            (self.show_width - self.caption_font_clearance) / w,
+            (self.show_width) / w,
             (self.show_height - self.caption_font_clearance) / h,
         )
 
@@ -771,7 +786,7 @@ class FlashCardViewer(ttk.Frame):
         if self.captions:
             self.image_label.configure(
                 image=self.current_photo,
-                text=self.image_name,
+                text=self.current_image.name,
                 compound="top",
             )
         else:
@@ -792,15 +807,11 @@ class FlashCardViewer(ttk.Frame):
                 if gimage.img:
                     gimage.img.close()
 
-        self.current_gallery = gallery
         self.current_images = gallery.get("images", [])
-        self.image_path = None
-        self.image_name = None
-        self.image_img = None
         self.sort = gallery.get("sort", SortOrder.RANDOM)
         self.loop = gallery.get("loop", True)
         self.captions = gallery.get("captions", True)
-        self.current_stingers = gallery.get("stingers")
+        self.current_stingers = [ x.get("image") for x in gallery.get("stingers")]
         self.use_stingers = True if len(self.current_stingers) > 0 else False
 
         for gimage in self.current_images:
@@ -820,14 +831,20 @@ class FlashCardViewer(ttk.Frame):
         elif self.sort == SortOrder.RANDOM:
             random.shuffle(self.current_images)
 
+        if not self.loop:
+            self.end_flashcard.load()
+            self.current_images.append(self.end_flashcard)
+
         self.current_image_index = 0
         self.current_image_index_max = len(self.current_images)
+        self.current_image = self.current_images[self.current_image_index]
 
         self.noteb.select(self.show_frame)
         self.show_active = True
-        self.next_card()
+        self.show_card()
 
-    def stinger_time(self, percent):
+    def stinger_time(self):
+        percent = self.storage.config.get("percent", 20)
         if percent > 100:
             percent = 100
         elif percent < 0:
@@ -835,62 +852,69 @@ class FlashCardViewer(ttk.Frame):
 
         return random.random() < percent / 100
 
-    def next_card(self, event=None):
+    def prev_card(self, event=None):
+        # don't progress when not on the present tab
+        if self.current_image_index_max == 0:
+            return 
 
         if not self.show_active:
             return
 
-        show_end = False
-        if self.loop:
-            if self.current_image_index == self.current_image_index_max:
-                self.current_image_index = 0
-        else:
-            if self.current_image_index == self.current_image_index_max:
-                self.current_image_index = 0
-                show_end = True
-
-        ## Choose an image
-
-        ## Ending Image
-        if show_end:
-            self.image_path = self.end_flashcard.path
-            self.image_name = self.end_flashcard.name
-            self.image_img = self.end_flashcard.img
-            self.show_stinger = False
-
-        ## Stinger Image
         elif (
             self.use_stingers
             and self.current_image_index > 0
-            and not self.show_stinger
-            and self.stinger_time(self.storage.config.get("percent", 20))
+            and self.stinger_time()
+            and len(self.current_stingers) > 0
         ):
             selection = random.choice(self.current_stingers)
-            self.image_path = selection["path"]
-            self.image_name = selection["name"]
-            self.image_img = selection["img"]
-            self.show_stinger = True
+            self.current_image = selection
+            self.show_card()
 
-        ## Gallery image
-        elif len(self.current_images) > 0:
-            # else:
-            selection = self.current_images[self.current_image_index]
-            self.image_path = selection.path
-            self.image_name = selection.name
-            self.image_img = selection.img
-            self.show_stinger = False
         else:
+            self.current_image_index = (
+                self.current_image_index - 1
+            ) % self.current_image_index_max
+            self.current_image = self.current_images[self.current_image_index]
+            self.show_card()
+
+    def next_card(self, event=None):
+        # don't progress when not on the present tab
+        if self.current_image_index_max == 0:
+            return 
+
+        if not self.show_active:
             return
 
-        # target bounds
-        if not self.image_img:
+        elif (
+            self.use_stingers
+            and self.current_image_index > 0
+            and self.stinger_time()
+            and len(self.current_stingers) > 0
+        ):
+            selection = random.choice(self.current_stingers)
+            self.current_image = selection
+            self.show_card()
+
+        else:
+            self.current_image_index = (
+                self.current_image_index + 1
+            ) % self.current_image_index_max
+            self.current_image = self.current_images[self.current_image_index]
+            self.show_card()
+
+    def show_card(self):
+
+        if self.current_image is None:
             return
 
-        img = self.image_img.copy()
+        if self.current_image.img is None:
+            return
+
+        img = self.current_image.img.copy()
         w, h = img.size
 
         scale = min(
-            (self.show_width - self.caption_font_clearance) / w,
+            (self.show_width) / w,
             (self.show_height - self.caption_font_clearance) / h,
         )
 
@@ -904,7 +928,7 @@ class FlashCardViewer(ttk.Frame):
         if self.captions:
             self.image_label.configure(
                 image=self.current_photo,
-                text=self.image_name,
+                text=self.current_image.name,
                 compound="top",
             )
         else:
@@ -913,9 +937,6 @@ class FlashCardViewer(ttk.Frame):
                 text="",
                 compound="top",
             )
-
-        if not show_end:
-            self.current_image_index += 1
 
     # -------------------------
     # Settings Tab
@@ -931,10 +952,7 @@ class FlashCardViewer(ttk.Frame):
             anchor=W, pady=(20, 15)
         )
 
-        fonts = list(tkfont.families())
-        fonts.sort()
-
-        self.selected_font = tk.StringVar(value=fonts[0])
+        self.selected_font = tk.StringVar(value=self.fonts[0])
         self.selected_font.trace_add("write", self.update_font)
 
         font_row = ttk.Frame(frame)
@@ -945,17 +963,23 @@ class FlashCardViewer(ttk.Frame):
         font_box = ttk.Combobox(
             font_row,
             textvariable=self.selected_font,
-            values=[afont for afont in fonts],
+            values=[afont for afont in self.fonts],
             state="readonly",
         )
 
         font_box.grid(row=0, column=0, padx=(10, 10), pady=(10, 10))
 
-        label_preview = ttk.Label(
-            font_row, text="Image Label", font=self.caption_font
-        )
-        label_preview.grid(row=0, column=1, padx=(10, 10), pady=(10, 10))
+        self.preview_canvas = tk.Canvas(font_row, width=800, height=self.caption_font_clearance, highlightthickness=0)
+        self.preview_canvas.grid(row=0, column=1)
 
+        self.preview_text = self.preview_canvas.create_text(
+            self.preview_canvas.winfo_reqwidth() // 2,
+            self.preview_canvas.winfo_reqheight() // 2,
+            text="Font Preview",
+            fill=self.style.colors.fg,
+            font=self.caption_font,
+            anchor="center"
+        )
 
         themes = [t.title() for t in self.style.theme_names()]
         theme_var = ttk.StringVar(value=self.style.theme_use().title())
@@ -978,6 +1002,9 @@ class FlashCardViewer(ttk.Frame):
             theme = theme_var.get().lower()
             self.style.theme_use(theme)
             self.storage.config["theme"] = theme
+            if self.preview_canvas:
+                fg = self.style.colors.fg
+                self.preview_canvas.itemconfig(self.preview_text, fill=fg)
             # update the grid so the background changes
             self.refresh_stinger_grid()
             self.new_config = True
@@ -1148,7 +1175,7 @@ class FlashCardViewer(ttk.Frame):
             x = 86
 
         entry = ttk.Entry(canvas)
-        entry.insert(0, stinger["name"])
+        entry.insert(0, stinger["image"].name)
 
         canvas.create_window(
             x,
@@ -1229,7 +1256,7 @@ class FlashCardViewer(ttk.Frame):
             text_id = canvas.create_text(
                 x + tile_width // 2,
                 y + tile_height - 12,
-                text=stinger["name"][:16],
+                text=stinger["image"].name[:16],
                 fill=fg,
                 font=self.gallery_font,
                 tags=(f"stinger_text_{i}",),
@@ -1252,7 +1279,7 @@ class FlashCardViewer(ttk.Frame):
                 canvas.tag_bind(
                     f"stinger_trash_{i}",
                     "<Button-1>",
-                    lambda e, p=stinger["path"]: self.delete_stinger(p),
+                    lambda e, p=stinger["image"].path: self.delete_stinger(p),
                 )
 
         total_rows = max(1, -(-len(stingers) // cols)) if stingers else 1
@@ -1308,6 +1335,8 @@ def main():
 
     app = FlashCardViewer(root)
     root.bind("<space>", app.next_card)
+    root.bind("<Right>", app.next_card)
+    root.bind("<Left>", app.prev_card)
     root.bind("<Control-f>", app.toggle_fullscreen)
     root.bind("<Escape>", app.exit_fullscreen)
     root.protocol("WM_DELETE_WINDOW", app.shutdown)
