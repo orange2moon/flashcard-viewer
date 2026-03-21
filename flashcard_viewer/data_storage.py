@@ -47,7 +47,9 @@ class GalleryImage:
 
     def load(self):
         if self.path.exists():
-            self.img = Image.open(self.path) 
+            with Image.open(self.path) as img:
+                img.load()
+                self.img = img.copy() 
 
     def sort_key(self):
         return self.path.stem.lower()

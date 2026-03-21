@@ -1112,8 +1112,9 @@ class FlashCardViewer(ttk.Frame):
         self.stinger_canvas.pack(side=LEFT, fill=BOTH, expand=True)
         scrollbar.configure(command=self.stinger_canvas.yview)
 
+        self._stinger_refresh_id = None
         self.stinger_canvas.bind(
-            "<Configure>", lambda e: self.refresh_stinger_grid()
+            "<Configure>", lambda e: self._schedule_stinger_refresh()
         )
 
         return frame
@@ -1204,6 +1205,11 @@ class FlashCardViewer(ttk.Frame):
 
         entry.bind("<Return>", save_name)
         entry.bind("<FocusOut>", save_name)
+
+    def _schedule_stinger_refresh(self):
+        if self._stinger_refresh_id is not None:
+            self.after_cancel(self._stinger_refresh_id)
+        self._stinger_refresh_id = self.after(100, self.refresh_stinger_grid)
 
     def refresh_stinger_grid(self):
         canvas = self.stinger_canvas
