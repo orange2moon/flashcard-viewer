@@ -17,6 +17,12 @@ import threading
 from queue import Queue
 import time
 
+# Testing
+import psutil
+import os
+
+process = psutil.Process(os.getpid())
+
 from flashcard_viewer.data_storage import DataStorage, GalleryImage
 from flashcard_viewer.image_folder_browser import ImageFolderBrowser
 from flashcard_viewer.image_file_browser import ImageFileBrowser
@@ -59,7 +65,6 @@ class FlashCardViewer(ttk.Frame):
 
         self.default_thumbnail_img = Image.open(self.storage.default_thumbnail)
 
-        self.end_flashcard = self.storage.end_flashcard
         theme = self.storage.config.get("theme")
         allowed_themes = themes = self.style.theme_names()
         if theme and theme in allowed_themes:
@@ -81,21 +86,6 @@ class FlashCardViewer(ttk.Frame):
         self.is_fullscreen = False
         self.show_active = False
 
-        # Trash icon for the gallery
-        trash_icon_path = self.storage.config["trash_icon_path"]
-        if isinstance(trash_icon_path, Path) and trash_icon_path.exists():
-            self.trash_icon = ImageTk.PhotoImage(file=trash_icon_path)
-        else:
-            icon = Image.new("RGBA", (32, 32), (220, 60, 60, 255))
-            self.trash_icon = ImageTk.PhotoImage(icon)
-
-        # Setting for the gallery
-        settings_icon_path = self.storage.config["settings_icon_path"]
-        if isinstance(settings_icon_path, Path) and settings_icon_path.exists():
-            self.settings_icon = ImageTk.PhotoImage(file=settings_icon_path)
-        else:
-            icon = Image.new("RGBA", (32, 32), (128, 128, 128, 255))
-            self.settings_icon = ImageTk.PhotoImage(icon)
 
         # notebook
         self.noteb = ttk.Notebook(self, bootstyle="light")
@@ -266,12 +256,17 @@ class FlashCardViewer(ttk.Frame):
         canvas = self.gallery_canvas
         canvas.delete("all")
 
+        updated_galleries = False
         if new or self.galleries is None:
             self.galleries = self.storage.list_galleries()
+            updated_galleries = True
+
 
         tile_width = 160
         tile_height = 180
         padding = 20
+        mem = process.memory_info().rss / 1024**2, "MB"
+        print(f"Update:{updated_galleries} mem:{mem}")
 
         cols = max(1, canvas.winfo_width() // (tile_width + padding))
 
@@ -286,12 +281,11 @@ class FlashCardViewer(ttk.Frame):
             y = padding + row * (tile_height + padding)
 
             # Draw background rectangle
-            bg = self.style.colors.bg
             canvas.create_polygon(
                 self.rounded_rect_points(
                     x, y, tile_width, tile_height, radius=25
                 ),
-                fill=bg,
+                fill=self.style.colors.bg,
                 outline=self.style.colors.border,
                 width=1,
                 smooth=True,
@@ -302,7 +296,7 @@ class FlashCardViewer(ttk.Frame):
             )
             # Draw thumbnail
             thumb = self.get_gallery_thumbnail(gallery)
-            self._tile_images.append(thumb)  # prevent GC
+            self._tile_images.append(thumb)
             thumb_y = (
                 y + (tile_height - 20) // 2
             )  # centered vertically, leaving room for text
@@ -316,12 +310,11 @@ class FlashCardViewer(ttk.Frame):
 
             # Draw name text
 
-            fg = self.style.colors.fg
             canvas.create_text(
                 x + tile_width // 2,
                 y + tile_height - 20,
                 text=gallery["name"],
-                fill=fg,
+                fill=self.style.colors.fg,
                 font=self.gallery_font,
                 tags=(f"tile_{i}",),
             )
@@ -329,16 +322,16 @@ class FlashCardViewer(ttk.Frame):
             if self.edit_mode:
                 canvas.create_image(
                     x + tile_width - 4,
-                    y + tile_height - 4 - self.trash_icon.height(),
-                    image=self.trash_icon,
+                    y + tile_height - 4 - self.storage.trash_icon.img.height(),
+                    image=self.storage.trash_icon.img,
                     anchor=NE,
                     tags=(f"trash_{i}",),
                 )
 
             canvas.create_image(
-                x + 4 + self.settings_icon.width(),
+                x + 4 + self.storage.gear_icon.img.width(),
                 y + 4,
-                image=self.settings_icon,
+                image=self.storage.gear_icon.img,
                 anchor=NE,
                 tags=(f"settings_{i}",),
             )
@@ -380,11 +373,11 @@ class FlashCardViewer(ttk.Frame):
     def _add_trash_icon(self, img_label, image_frame, gallery):
         trash = ttk.Label(
             image_frame,
-            image=self.trash_icon,
+            image=self.storage.trash_icon.img,
             cursor="hand2",
             bootstyle="danger",
         )
-        trash.image = self.trash_icon
+        trash.image = self.storage.trash_icon.img
         trash.place(relx=1, rely=0, anchor="ne", x=-4, y=4)
         trash.bind(
             "<Button-1>",
@@ -676,10 +669,11 @@ class FlashCardViewer(ttk.Frame):
 
         self._settings_popup = frame
 
+    ## 60% sure the memory leak is here
     def get_gallery_thumbnail(self, gallery: dict) -> ImageTk:
         """Loads and caches gallery thumbnails"""
 
-        path = gallery.get("path")
+        path = gallery.get("images")
         if not path:
             return ImageTk.PhotoImage(self.default_thumbnail_img)
 
@@ -689,7 +683,9 @@ class FlashCardViewer(ttk.Frame):
 
         # Check if icon path is already stored in the database
         if gallery.get("icon") and gallery["icon"].exists():
-            thumb = ImageTk.PhotoImage(Image.open(gallery["icon"]))
+            with Image.open(gallery["icon"]) as img:
+                img.load()
+                thumb = ImageTk.PhotoImage(img.copy())
         else:
             thumb = ImageTk.PhotoImage(self.default_thumbnail_img)
 
@@ -804,14 +800,13 @@ class FlashCardViewer(ttk.Frame):
 
         if len(self.current_images) > 0:
             for gimage in self.current_images:
-                if gimage.img:
-                    gimage.img.close()
+                gimage.close()
 
         self.current_images = gallery.get("images", [])
         self.sort = gallery.get("sort", SortOrder.RANDOM)
         self.loop = gallery.get("loop", True)
         self.captions = gallery.get("captions", True)
-        self.current_stingers = [ x.get("image") for x in gallery.get("stingers")]
+        self.current_stingers = [x.get("image") for x in gallery.get("stingers")]
         self.use_stingers = True if len(self.current_stingers) > 0 else False
 
         for gimage in self.current_images:
@@ -832,8 +827,7 @@ class FlashCardViewer(ttk.Frame):
             random.shuffle(self.current_images)
 
         if not self.loop:
-            self.end_flashcard.load()
-            self.current_images.append(self.end_flashcard)
+            self.current_images.append(self.storage.end_flashcard)
 
         self.current_image_index = 0
         self.current_image_index_max = len(self.current_images)
@@ -855,7 +849,7 @@ class FlashCardViewer(ttk.Frame):
     def prev_card(self, event=None):
         # don't progress when not on the present tab
         if self.current_image_index_max == 0:
-            return 
+            return
 
         if not self.show_active:
             return
@@ -880,7 +874,7 @@ class FlashCardViewer(ttk.Frame):
     def next_card(self, event=None):
         # don't progress when not on the present tab
         if self.current_image_index_max == 0:
-            return 
+            return
 
         if not self.show_active:
             return
@@ -938,6 +932,8 @@ class FlashCardViewer(ttk.Frame):
                 compound="top",
             )
 
+        print(process.memory_info().rss / 1024**2, "MB")
+
     # -------------------------
     # Settings Tab
     # -------------------------
@@ -969,7 +965,12 @@ class FlashCardViewer(ttk.Frame):
 
         font_box.grid(row=0, column=0, padx=(10, 10), pady=(10, 10))
 
-        self.preview_canvas = tk.Canvas(font_row, width=800, height=self.caption_font_clearance, highlightthickness=0)
+        self.preview_canvas = tk.Canvas(
+            font_row,
+            width=800,
+            height=self.caption_font_clearance,
+            highlightthickness=0,
+        )
         self.preview_canvas.grid(row=0, column=1)
 
         self.preview_text = self.preview_canvas.create_text(
@@ -978,7 +979,7 @@ class FlashCardViewer(ttk.Frame):
             text="Font Preview",
             fill=self.style.colors.fg,
             font=self.caption_font,
-            anchor="center"
+            anchor="center",
         )
 
         themes = [t.title() for t in self.style.theme_names()]
@@ -1117,6 +1118,8 @@ class FlashCardViewer(ttk.Frame):
             "<Configure>", lambda e: self._schedule_stinger_refresh()
         )
 
+        print(process.memory_info().rss / 1024**2, "MB")
+
         return frame
 
     def save_app_settings(self):
@@ -1245,12 +1248,14 @@ class FlashCardViewer(ttk.Frame):
             icon_path = stinger.get("icon")
             if icon_path and isinstance(icon_path, Path) and icon_path.exists():
                 img = Image.open(icon_path)
-                img.thumbnail((80, 80))
+                img.load()
+                thumb = img.copy()
+                thumb.thumbnail((80, 80))
             else:
                 img = Image.new("RGB", (80, 80), color=(200, 200, 200))
 
             photo = ImageTk.PhotoImage(img)
-            self._stinger_tile_images.append(photo)
+            self.t_stinger_tile_images.append(photo)
 
             canvas.create_image(
                 x + tile_width // 2,
@@ -1278,7 +1283,7 @@ class FlashCardViewer(ttk.Frame):
                 canvas.create_image(
                     x + tile_width - 4,
                     y + 4,
-                    image=self.trash_icon,
+                    image=self.storage.trash_icon.img,
                     anchor=NE,
                     tags=(f"stinger_trash_{i}",),
                 )

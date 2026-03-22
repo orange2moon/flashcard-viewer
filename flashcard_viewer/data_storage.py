@@ -39,36 +39,58 @@ class SortOrder(Enum):
 
         return sort_style
 
-@dataclass
 class GalleryImage:
-    path: Path
-    name: str
-    img: Image
+    default_img = None
+    default_path = None
+    default_name = "missing image"
+
+    def __init__(self, path: Path | None = None, name="missing", img=None):
+        # what happens when I pass 
+        # image = GalleryImage()
+        # image.path.unlink()
+        self.path = path
+        self.name = name
+        self.img = img  # None means "not loaded"
 
     def load(self):
-        if self.path.exists():
+        if self.path and self.path.is_file():
             with Image.open(self.path) as img:
                 img.load()
-                self.img = img.copy() 
+                self.img = img.copy()
+        elif self.path:
+            if type(self).default_img is None:
+                raise RuntimeError("Default image not initialized")
+            self.img = type(self).default_img.copy()
+            self.img.save(self.path)
+
+    def close(self):
+        self.img = None
+
+    def get_img(self):
+        if self.img is None:
+            self.load()
+        return self.img
 
     def sort_key(self):
-        return self.path.stem.lower()
+        return self.path.stem.lower() if self.path else "z"
 
     def __str__(self):
         return f"{self.name}:{self.path}"
 
-
 class DataStorage:
     def __init__(self):
-        self.BASE_PATH = Path.home() / ".local" / "share" / "flashcard-viewer"
+        """Create all of the default assets.
+        Load all the galleries from the database.
+        Create the database if it doesn't exists.
+        Validate the database if it exists"""
 
-        self.save_path = self.BASE_PATH / "galleries.db"
-
-        self.CONFIG_DIR = Path.home() / ".config" / "flashcard-viewer"
-        self.CONFIG_FILE = self.CONFIG_DIR / "config.toml"
         self.allowed_image_types = [".png", ".jpg", ".webp", ".tiff"]
         self.default_image_types = [".png", ".webp", ".jpg", ".tiff"]
         self.config = {}
+
+        self.BASE_PATH = Path.home() / ".local" / "share" / "flashcard-viewer"
+
+        self.CONFIG_DIR = Path.home() / ".config" / "flashcard-viewer"
 
         self.CACHE_DIR = (
             Path.home() / ".local" / "share" / "flashcard-viewer" / "cache"
@@ -76,11 +98,643 @@ class DataStorage:
         self.ASSETS_DIR = (
             Path.home() / ".local" / "share" / "flashcard-viewer" / "assets"
         )
-        self.stinger_dir = self.CACHE_DIR / "stingers"
+        self.STINGER_DIR = self.CACHE_DIR / "stingers"
 
-        end_path = self.ASSETS_DIR / "end_flashcard.png"
-        end_name = "The End"
-        self.end_flashcard = GalleryImage(path=end_path, name=end_name, img=None)
+        if not self.BASE_PATH.is_dir():
+            self.BASE_PATH.mkdir(parents=True, exist_ok=True)
+
+        if not self.CONFIG_DIR.exists():
+            self.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+        if not self.ASSETS_DIR.exists():
+            self.ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+
+        if not self.STINGER_DIR.exists():
+            self.STINGER_DIR.mkdir(parents=True, exist_ok=True)
+
+        if not self.CACH_DIR.exists():
+            self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+        # First load the config file to get possible 
+        # file paths
+        self.CONFIG_FILE = self.CONFIG_DIR / "config.toml"
+        self.config = self.load_config()
+
+        # The default thumbnail is kept in the GalleryImage class
+        # as a class variable
+        self._ensure_default_thumbnail(self.ASSETS_DIR / "default.png")
+
+        self.trash_icon = None
+        self._ensure_default_trash_icon(self.ASSETS_DIR / "trash.png")
+
+        self.gear_icon = None
+        self._ensure_default_settings_icon(self.ASSETS_DIR / "settings.png")
+
+        self.end_flashcard = None
+        self._ensure_default_end_flashcard(self.ASSETS_DIR / "end.png")
+
+
+        self.db_path = self.BASE_PATH / "galleries.db"
+        if not self.db_path.exists():
+            self.create_new_database()
+        else:
+            try:
+                self.validate_database()
+            except StorageErrors:
+                self.remove_bad_db(self.db_path)
+                self.create_new_database()
+
+        percent = self.config.get("percent", None)
+
+        if percent is None:
+            self.config["percent"] = 20
+        elif not (0 <= percent <= 100):
+            self.config["percent"] = 20
+
+    def get_last_path(self):
+        return self.config.get("last_path", None)
+
+    def add_stinger_to_gallery(self, gallery_id, stinger_id):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO gsting (g_id, s_id) VALUES (?, ?)",
+                (gallery_id, stinger_id),
+            )
+
+
+    def update_gallery_settings(
+        self,
+        id: int,
+        path: Path,
+        name: str,
+        sort: SortOrder,
+        loop: bool,
+        captions: bool,
+        stingers: list,
+    ):
+        """save settings specific to a gallery
+        id: the gallery id, the one you are updating
+        path: the path to the gallery folder
+        name: the name of the gallery type
+        sort: a"""
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                UPDATE galleries
+                SET name = ?, path = ?, sort = ?, loop = ?, captions = ?
+                WHERE id = ?
+            """,
+                (
+                    name,
+                    str(path.resolve()),
+                    sort.value,
+                    loop,
+                    captions,
+                    id,
+                ),
+            )
+
+        self.stinger_remove_from_gallery(id)
+        for stinger in stingers:
+            self.add_stinger_to_gallery(id, stinger)
+
+    def load_config(self):
+        has_config = True
+        if not self.CONFIG_FILE.exists():
+            mytoml = {}
+            has_config = False
+        else:
+            with open(self.CONFIG_FILE, "rb") as f:
+                mytoml = tomllib.load(f)
+
+        # last path
+        last_path = mytoml.get("last_path", None)
+        if last_path:
+            p = Path(last_path)
+            mytoml["last_path"] = p if p.is_dir() else None
+
+        #  trash_icon_path
+        my_path = mytoml.get("trash_icon_path", None)
+        if my_path:
+            p = Path(my_path)
+            mytoml["trash_icon_path"] = p if p.is_file() else None
+
+        #  settings_icon_path
+        my_path = mytoml.get("settings_icon_path", None)
+        if my_path:
+            p = Path(my_path)
+            mytoml["settings_icon_path"] = p if p.is_file() else None
+
+        # image types
+        image_types = mytoml.get("image_types")
+        if image_types:
+            mytoml["image_types"] = [
+                t_lower
+                for t in image_types
+                if (t_lower := t.lower()) in self.allowed_image_types
+            ]
+
+        if not image_types:
+            mytoml["image_types"] = self.default_image_types
+
+        return mytoml
+
+    def save_config(self):
+        if not self.CONFIG_DIR.exists():
+            self.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+        serializable = {
+            key: str(value) if isinstance(value, Path) else value
+            for key, value in self.config.items()
+            if value is not None
+        }
+
+        with open(self.CONFIG_FILE, "wb") as f:
+            tomli_w.dump(serializable, f)
+
+    def remember_last_path(self, last_path):
+        path = Path(last_path).resolve()
+        if not path.is_dir():
+            return None
+
+        self.config["last_path"] = path
+
+    def remove_bad_db(self, db_path: Path) -> Path | None:
+
+        if db_path.exists():
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            bad_path = db_path.with_name(
+                f"{db_path.stem}_{timestamp}{db_path.suffix}"
+            )
+
+            db_path.rename(bad_path)
+            return bad_path
+
+    def validate_database(self, load_file=None):
+        """check for the presence of a table galleries
+        raise an error if there is a problem"""
+
+        if load_file is None:
+            load_file = self.db_path
+
+        if not load_file.exists():
+            raise StorageErrors(f"File not found {load_file}")
+
+        try:
+            with sqlite3.connect(load_file) as conn:
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA foreign_keys = ON")
+                cur = conn.cursor()
+
+                # Check tables
+                cur.execute("""
+                    SELECT name FROM sqlite_master
+                    WHERE type='table'
+                """)
+                tables = {row[0] for row in cur.fetchall()}
+
+                required_tables = {"galleries", "stingers", "images", "gsting"}
+                missing_tables = required_tables - tables
+
+                if missing_tables:
+                    raise StorageErrors(
+                        f"Database Missing tables: {', '.join(missing_tables)}"
+                    )
+
+        except sqlite3.DatabaseError as e:
+            raise StorageErrors(f"Database file is corrupt or invalid: {e}")
+
+    def create_new_database(self, save_path=None):
+        """Create a new database with the table galleries
+        The galleries table should hold file paths
+        and names."""
+
+        if save_path is None:
+            save_path = self.db_path
+
+        with sqlite3.connect(save_path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS galleries (
+                    id INTEGER PRIMARY KEY,
+                    path TEXT UNIQUE,
+                    name TEXT,
+                    icon TEXT,
+                    sort INT DEFAULT 0,
+                    loop BOOLEAN DEFAULT 1,
+                    captions BOOLEAN DEFAULT 1
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS stingers (
+                    id INTEGER PRIMARY KEY,
+                    path TEXT UNIQUE,
+                    name TEXT,
+                    icon TEXT
+                )
+            """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS images (
+                    id INTEGER PRIMARY KEY,
+                    gallery_id INTEGER NOT NULL,
+                    ipath TEXT NOT NULL,
+                    iname TEXT,
+                    FOREIGN KEY (gallery_id) REFERENCES galleries(id) ON DELETE CASCADE
+                )
+            """)
+
+            ## GALLERY STINGER RELATIONSHIP
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS gsting (
+                    g_id INTEGER NOT NULL,
+                    s_id INTEGER NOT NULL,
+                    FOREIGN KEY (g_id) REFERENCES galleries(id) ON DELETE CASCADE,
+                    FOREIGN KEY (s_id) REFERENCES stingers(id) ON DELETE CASCADE
+                )
+            """)
+
+    def stinger_dict(self, id, path, name, icon):
+        stinger = {}
+
+        path = Path(path) if path else None
+
+        stinger["id"] = id
+        stinger["image"] = GalleryImage(path=path, name=name)
+        stinger["image"].load()
+        stinger["icon"] = Path(icon) if icon else None
+
+        return stinger
+
+    def list_stingers(self):
+        """Get all of the data from the stingers table
+        path: the path to the image file
+        name: the canonical name for the stinger
+        icon: the 400x400 icon image file
+        """
+
+        stingers = []
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA foreign_keys = ON")
+            res = conn.execute("SELECT id, path, name, icon FROM stingers")
+            for id, path, name, icon in res.fetchall():
+                stinger = self.stinger_dict(id, path, name, icon)
+                stingers.append(stinger)
+
+        return stingers
+
+    def get_stinger(self, id: int):
+        """Get all of the data from the stingers table
+        path: the path to the image file
+        name: the canonical name for the stinger
+        icon: the 400x400 icon image file
+        """
+
+        stinger = {}
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA foreign_keys = ON")
+            res = conn.execute(
+                """
+                SELECT id, path, name, icon FROM stingers
+                WHERE id = ?
+                """,
+                (id,)
+            )
+            data = res.fetchone()
+            if data:
+                id, path, name, icon = data
+                stinger = self.stinger_dict(id, path, name, icon)
+
+        return stinger
+
+    def get_stingers_for_gallery(self, gallery_id):
+        stinger_id_list = []
+        with sqlite3.connect(self.db_path) as conn:
+            res = conn.execute(
+                """
+                SELECT s_id FROM gsting
+                WHERE g_id = ?
+                """,
+                (gallery_id,),
+            )
+            stinger_id_list = res.fetchall()
+
+        total = []
+        for id in stinger_id_list:
+            stinger = self.get_stinger(id[0])
+            if stinger:
+                total.append(stinger)
+
+        return total
+
+    def get_or_create_thumbnail_path(self, gallery_path):
+
+        # Use the gallery path as a unique cache key
+        cache_key = hashlib.md5(str(gallery_path).encode()).hexdigest()
+        thumb_path = self.CACHE_DIR / f"{cache_key}.png"
+
+        if thumb_path.is_file():
+            return thumb_path
+
+        if gallery_path is None:
+            img = GalleryImage.default_img.copy()
+            img.save(thumb_path, "PNG")
+            return thumb_path
+
+        if (
+            gallery_path.is_file()
+            and gallery_path.suffix.lower() in self.config["image_types"]
+        ):
+            with Image.open(gallery_path) as img:
+                img.thumbnail((140, 140))
+                img.save(thumb_path, "PNG")
+                return thumb_path
+
+        if gallery_path.is_dir():
+            images = self.list_images(gallery_path)
+            if images and len(images) > 0:
+                first_img = images[0]
+                img = first_img.get_image().copy()
+                first_img.close()
+                img.thumbnail((140, 140))
+                img.save(thumb_path, "PNG")
+                return thumb_path
+
+        img = GalleryImage.default_img.copy()
+        img.save(thumb_path, "PNG")
+        return thumb_path
+
+    def remember_gallery(self, path, name):
+        """Save a path and a name to the database"""
+
+        icon = self.get_or_create_thumbnail_path(path)
+
+        path = Path(path).resolve()
+        if not path.is_dir():
+            return False
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute(
+                "INSERT OR IGNORE INTO galleries (path, name, icon) VALUES (?, ?, ?)",
+                (str(path), name, str(icon)),
+            )
+
+        return True
+
+    def remember_stinger(self, path, name):
+        """Save a path and a name to the database"""
+
+        if path.is_dir():
+            return False
+
+        path = path.copy_into(self.STINGER_DIR)
+        icon = self.get_or_create_thumbnail_path(path)
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute(
+                "INSERT OR IGNORE INTO stingers (path, name, icon) VALUES (?, ?, ?)",
+                (str(path), name, str(icon)),
+            )
+
+        return True
+
+    def update_stinger(self, id, name):
+        """Save a path and a name to the database"""
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute(
+                "UPDATE stingers SET name = ? WHERE id = ?",
+                (name, id),
+            )
+
+    def forget_stinger(self, path):
+        """Remove a gallery from the database.
+        Delete by path because name will not be unique."""
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA foreign_keys = ON")
+            res = conn.execute(
+                "SELECT icon FROM stingers WHERE path = ?",
+                (str(path.resolve()),),
+            )
+            has_icon_path = res.fetchone()
+
+            if has_icon_path:
+                icon_path = has_icon_path[0]
+            else:
+                icon_path = None
+
+            conn.execute(
+                "DELETE FROM stingers WHERE path = ?",
+                (str(path.resolve()),),
+            )
+
+            if icon_path:
+                icon_path = Path(icon_path)
+                if icon_path != self.default_thumbnail:
+                    icon_path.unlink()
+
+            if path.exists():
+                path.unlink()
+
+    def stinger_remove_from_gallery(self, gallery_id):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute(
+                """
+                DELETE FROM gsting WHERE g_id = ?
+            """,
+                (gallery_id,),
+            )
+
+    def remember_gallery_icon(self, gallery_path, icon_path):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute(
+                "UPDATE galleries SET icon = ? WHERE path = ?",
+                (icon_path, str(gallery_path.resolve())),
+            )
+
+    def update_gallery_icon(self, gallery_path, icon_path):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute(
+                "UPDATE galleries SET icon = ? WHERE path = ?",
+                (icon_path, str(gallery_path.resolve())),
+            )
+
+    def forget_gallery(self, path):
+        """Remove a gallery from the database.
+        Delete by path because name will not be unique."""
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA foreign_keys = ON")
+            res = conn.execute(
+                "SELECT icon FROM galleries WHERE path = ?",
+                (str(path.resolve()),),
+            )
+            row = res.fetchone()
+            if row:
+                icon_path = row[0]
+            else:
+                icon_path = None
+
+            conn.execute(
+                "DELETE FROM galleries WHERE path = ?",
+                (str(path.resolve()),),
+            )
+
+            if icon_path:
+                icon_path = Path(icon_path)
+                if icon_path != self.default_thumbnail:
+                    icon_path.unlink()
+
+    def get_images_for_path(self, path):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA foreign_keys = ON")
+            res = conn.execute(
+                """
+                SELECT ipath, iname FROM images 
+                JOIN galleries ON images.gallery_id = galleries.id
+                WHERE path = ?
+                """,
+                (str(path.resolve()),),
+            )
+            images = res.fetchall()
+            if images:
+                d = {path: name for path, name in images}
+                return d
+            else:
+                return {}
+
+    def save_image_name(self, gallery_path, image_path, name):
+        """Save or update the display name for a single image."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA foreign_keys = ON")
+            res = conn.execute(
+                "SELECT id FROM galleries WHERE path = ?",
+                (str(gallery_path.resolve()),),
+            )
+            has_id = res.fetchone()
+            if not has_id:
+                return
+
+            gallery_id = has_id[0]
+            res = conn.execute(
+                "SELECT id FROM images WHERE gallery_id = ? AND ipath = ?",
+                (gallery_id, str(image_path.resolve())),
+            )
+            existing = res.fetchone()
+            if existing:
+                conn.execute(
+                    "UPDATE images SET iname = ? WHERE id = ?",
+                    (name, existing[0]),
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO images (gallery_id, ipath, iname) VALUES (?, ?, ?)",
+                    (gallery_id, str(image_path.resolve()), name),
+                )
+
+    def list_images(self, path, recursive=False) -> [GalleryImage]:
+
+        named_images = self.get_images_for_path(path)
+
+        path_and_names = []
+        for f in path.iterdir():
+            if f.is_file() and f.suffix.lower() in self.config["image_types"]:
+                if named_images.get(str(f)):
+                    name = named_images.get(str(f))
+                else:
+                    name = f.stem
+
+                path_and_names.append(GalleryImage(path=Path(f), name=name, img=None))
+
+        return path_and_names
+
+    def gallery_query_to_dict(self, id, path, name, icon, sort, loop, captions):
+        gallery = {}
+        gallery_dir = Path(path)
+        gallery["id"] = id
+        gallery["path"] = gallery_dir
+        gallery["name"] = name
+        gallery["icon"] = Path(icon) if icon else None
+        gallery["sort"] = SortOrder.from_int(sort)
+        gallery["loop"] = True if loop == 1 else False
+        gallery["captions"] = True if captions == 1 else False
+        gallery["stingers"] = self.get_stingers_for_gallery(id)
+
+        if gallery_dir.is_dir():
+            gallery["valid"] = True
+            gallery["images"] = self.list_images(gallery_dir)
+
+        else:
+            gallery["valid"] = False
+            gallery["images"] = None
+
+        return gallery
+
+    def list_galleries(self):
+        """Get all of the data from the galleries table"""
+
+        galleries = []
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA foreign_keys = ON")
+            res = conn.execute(
+                "SELECT id, path, name, icon , sort, loop, captions FROM galleries"
+            )
+            for gallery_data in res.fetchall():
+                if gallery_data:
+                    id, path, name, icon, sort, loop, captions = gallery_data
+                    gallery = self.gallery_query_to_dict(
+                        id, path, name, icon, sort, loop, captions
+                    )
+                    galleries.append(gallery)
+
+        return galleries
+
+    def scan_gallery(self, gallery_path):
+        """Scan one gallery and return its metadata."""
+
+        gallery_path = gallery_path.resolve()
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA foreign_keys = ON")
+            res = conn.execute(
+                "SELECT id, path, name, icon, sort, loop, captions FROM galleries WHERE path = ?",
+                (str(gallery_path),),
+            )
+
+            row = res.fetchone()
+
+            if row is None:
+                return None
+            else:
+                if row:
+                    id, path, name, icon, sort, loop, captions = row
+                    return self.gallery_query_to_dict(
+                        id, path, name, icon, sort, loop, captions
+                    )
 
     def _draw_green_checkmark(self):
 
@@ -207,664 +861,52 @@ class DataStorage:
 
         return img
 
-    def _ensure_default_end_flashcard(self):
-        if not self.end_flashcard.path.exists():
+    def _ensure_default_end_flashcard(self, path):
+        if not path or isinstance(path, Path):
+            raise RuntimeError("No default image path")
+
+        img = None
+        if not path.is_file():
             img = self._draw_green_checkmark()
-            img.save(self.end_flashcard.path)
+            img.save(path)
 
-    def _ensure_default_thumbnail(self):
-        if not self.default_thumbnail.exists():
+        self.end_flashcard = GalleryImage(path=path, name="trash", img=img)
+
+    def _ensure_default_thumbnail(self, path:Path | None = None):
+
+        if not path or isinstance(path, Path):
+            raise RuntimeError("No default image path")
+
+        if not path.is_file():
             img = self._draw_question_mark()
-            img.save(self.default_thumbnail)
+            img.save(path)
+            GalleryImage.default_img = img
+        else:
+            with Image.open(path) as img:
+                img.load()
+                GalleryImage.default_img = img.copy()
 
-    def _ensure_default_trash_icon(self):
-        if not isinstance(self.config.get("trash_icon_path"), Path):
-            return
+        GalleryImage.default_path = path.resolve()
 
-        elif not self.config.get("trash_icon_path").exists():
-            img = self._draw_trash_icon()
-            img.save(self.config.get("trash_icon_path"))
 
-    def _ensure_default_settings_icon(self):
-        if not isinstance(self.config.get("settings_icon_path"), Path):
-            return
+    def _ensure_default_trash_icon(self, path):
+        if not path or isinstance(path, Path):
+            raise RuntimeError("No default image path")
 
-        elif not self.config["settings_icon_path"].exists():
+        img = None
+        if not path.is_file():
+            img = self._draw_question_mark()
+            img.save(path)
+
+        self.trash_icon = GalleryImage(path=path, name="trash", img=img)
+
+    def _ensure_default_settings_icon(self, path):
+        if not path or isinstance(path, Path):
+            raise RuntimeError("No default image path")
+
+        img = None
+        if not path.is_file():
             img = self._draw_gear_icon()
-            img.save(self.config["settings_icon_path"])
+            img.save(path)
 
-    def start(self):
-        """Load all the galleries from the database.
-        Create the database if it doesn't exists.
-        Validate the database if it exists"""
-
-        self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-        if not self.BASE_PATH.exists():
-            self.BASE_PATH.mkdir(parents=True, exist_ok=True)
-
-        if not self.CONFIG_DIR.exists():
-            self.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-
-        if not self.ASSETS_DIR.exists():
-            self.ASSETS_DIR.mkdir(parents=True, exist_ok=True)
-
-        if not self.stinger_dir.exists():
-            self.stinger_dir.mkdir(parents=True, exist_ok=True)
-
-        self.config = self.load_config()
-
-        self.default_thumbnail = self.ASSETS_DIR / "default.png"
-
-        trash = self.ASSETS_DIR / "trash.png"
-        self.config["trash_icon_path"] = trash
-
-        settings = self.ASSETS_DIR / "settings.png"
-        self.config["settings_icon_path"] = settings
-
-        # Check the filesystem
-        if not self.BASE_PATH.is_dir():
-            raise NotADirectoryError(self.BASE_PATH)
-
-        if not self.save_path.exists():
-            self.create_new_database()
-            # done
-
-        else:
-            try:
-                self.validate_database()
-            except StorageErrors:
-                self.remove_bad_db(self.save_path)
-                self.create_new_database()
-
-        self._ensure_default_thumbnail()
-        self.default_thumbnail_img = Image.open(self.default_thumbnail)
-        self._ensure_default_trash_icon()
-        self._ensure_default_settings_icon()
-        self._ensure_default_end_flashcard()
-        self.end_flashcard.load()
-
-
-        percent = self.config.get("percent", None)
-
-        if percent is None:
-            self.config["percent"] = 20
-        elif not (0 <= percent <= 100):
-            self.config["percent"] = 20
-
-    def get_last_path(self):
-        return self.config.get("last_path", None)
-
-    def add_stinger_to_gallery(self, gallery_id, stinger_id):
-        with sqlite3.connect(self.save_path) as conn:
-            conn.execute(
-                "INSERT OR IGNORE INTO gsting (g_id, s_id) VALUES (?, ?)",
-                (gallery_id, stinger_id),
-            )
-
-
-    def update_gallery_settings(
-        self,
-        id: int,
-        path: Path,
-        name: str,
-        sort: SortOrder,
-        loop: bool,
-        captions: bool,
-        stingers: list,
-    ):
-        """save settings specific to a gallery
-        id: the gallery id, the one you are updating
-        path: the path to the gallery folder
-        name: the name of the gallery type
-        sort: a"""
-
-        with sqlite3.connect(self.save_path) as conn:
-            conn.execute(
-                """
-                UPDATE galleries
-                SET name = ?, path = ?, sort = ?, loop = ?, captions = ?
-                WHERE id = ?
-            """,
-                (
-                    name,
-                    str(path.resolve()),
-                    sort.value,
-                    loop,
-                    captions,
-                    id,
-                ),
-            )
-
-        self.stinger_remove_from_gallery(id)
-        for stinger in stingers:
-            self.add_stinger_to_gallery(id, stinger)
-
-    def load_config(self):
-        has_config = True
-        if not self.CONFIG_FILE.exists():
-            mytoml = {}
-            has_config = False
-        else:
-            with open(self.CONFIG_FILE, "rb") as f:
-                mytoml = tomllib.load(f)
-
-        # last path
-        last_path = mytoml.get("last_path", None)
-        if last_path:
-            p = Path(last_path)
-            mytoml["last_path"] = p if p.is_dir() else None
-
-        #  trash_icon_path
-        my_path = mytoml.get("trash_icon_path", None)
-        if my_path:
-            p = Path(my_path)
-            mytoml["trash_icon_path"] = p if p.is_file() else None
-
-        #  settings_icon_path
-        my_path = mytoml.get("settings_icon_path", None)
-        if my_path:
-            p = Path(my_path)
-            mytoml["settings_icon_path"] = p if p.is_file() else None
-
-        # image types
-        image_types = mytoml.get("image_types")
-        if image_types:
-            mytoml["image_types"] = [
-                t_lower
-                for t in image_types
-                if (t_lower := t.lower()) in self.allowed_image_types
-            ]
-
-        if not image_types:
-            mytoml["image_types"] = self.default_image_types
-
-        return mytoml
-
-    def save_config(self):
-        if not self.CONFIG_DIR.exists():
-            self.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-
-        serializable = {
-            key: str(value) if isinstance(value, Path) else value
-            for key, value in self.config.items()
-            if value is not None
-        }
-
-        with open(self.CONFIG_FILE, "wb") as f:
-            tomli_w.dump(serializable, f)
-
-    def remember_last_path(self, last_path):
-        path = Path(last_path).resolve()
-        if not path.is_dir():
-            return None
-
-        self.config["last_path"] = path
-
-    def remove_bad_db(self, db_path: Path) -> Path | None:
-
-        if db_path.exists():
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            bad_path = db_path.with_name(
-                f"{db_path.stem}_{timestamp}{db_path.suffix}"
-            )
-
-            db_path.rename(bad_path)
-            return bad_path
-
-    def validate_database(self, load_file=None):
-        """check for the presence of a table galleries
-        raise an error if there is a problem"""
-
-        if load_file is None:
-            load_file = self.save_path
-
-        if not load_file.exists():
-            raise StorageErrors(f"File not found {load_file}")
-
-        try:
-            with sqlite3.connect(load_file) as conn:
-                conn.execute("PRAGMA journal_mode=WAL")
-                conn.execute("PRAGMA foreign_keys = ON")
-                cur = conn.cursor()
-
-                # Check tables
-                cur.execute("""
-                    SELECT name FROM sqlite_master
-                    WHERE type='table'
-                """)
-                tables = {row[0] for row in cur.fetchall()}
-
-                required_tables = {"galleries", "stingers", "images", "gsting"}
-                missing_tables = required_tables - tables
-
-                if missing_tables:
-                    raise StorageErrors(
-                        f"Database Missing tables: {', '.join(missing_tables)}"
-                    )
-
-        except sqlite3.DatabaseError as e:
-            raise StorageErrors(f"Database file is corrupt or invalid: {e}")
-
-    def create_new_database(self, save_path=None):
-        """Create a new database with the table galleries
-        The galleries table should hold file paths
-        and names."""
-
-        if save_path is None:
-            save_path = self.save_path
-
-        with sqlite3.connect(save_path) as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys = ON")
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS galleries (
-                    id INTEGER PRIMARY KEY,
-                    path TEXT UNIQUE,
-                    name TEXT,
-                    icon TEXT,
-                    sort INT DEFAULT 0,
-                    loop BOOLEAN DEFAULT 1,
-                    captions BOOLEAN DEFAULT 1
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS stingers (
-                    id INTEGER PRIMARY KEY,
-                    path TEXT UNIQUE,
-                    name TEXT,
-                    icon TEXT
-                )
-            """)
-
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS images (
-                    id INTEGER PRIMARY KEY,
-                    gallery_id INTEGER NOT NULL,
-                    ipath TEXT NOT NULL,
-                    iname TEXT,
-                    FOREIGN KEY (gallery_id) REFERENCES galleries(id) ON DELETE CASCADE
-                )
-            """)
-
-            ## GALLERY STINGER RELATIONSHIP
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS gsting (
-                    g_id INTEGER NOT NULL,
-                    s_id INTEGER NOT NULL,
-                    FOREIGN KEY (g_id) REFERENCES galleries(id) ON DELETE CASCADE,
-                    FOREIGN KEY (s_id) REFERENCES stingers(id) ON DELETE CASCADE
-                )
-            """)
-
-    def stinger_dict(self, id, path, name, icon):
-        stinger = {}
-
-        path = Path(path) if path else None
-
-        stinger["id"] = id
-        stinger["image"] = GalleryImage(path=path, name=name, img=self.default_thumbnail_img)
-        stinger["image"].load()
-        stinger["icon"] = Path(icon) if icon else None
-
-        return stinger
-
-    def list_stingers(self):
-        """Get all of the data from the stingers table
-        path: the path to the image file
-        name: the canonical name for the stinger
-        icon: the 400x400 icon image file
-        """
-
-        stingers = []
-        with sqlite3.connect(self.save_path) as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys = ON")
-            res = conn.execute("SELECT id, path, name, icon FROM stingers")
-            for id, path, name, icon in res.fetchall():
-                stinger = self.stinger_dict(id, path, name, icon)
-                stingers.append(stinger)
-
-        return stingers
-
-    def get_stinger(self, id: int):
-        """Get all of the data from the stingers table
-        path: the path to the image file
-        name: the canonical name for the stinger
-        icon: the 400x400 icon image file
-        """
-
-        stinger = {}
-        with sqlite3.connect(self.save_path) as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys = ON")
-            res = conn.execute(
-                """
-                SELECT id, path, name, icon FROM stingers
-                WHERE id = ?
-                """,
-                (id,)
-            )
-            data = res.fetchone()
-            if data:
-                id, path, name, icon = data
-                stinger = self.stinger_dict(id, path, name, icon)
-
-        return stinger
-
-    def get_stingers_for_gallery(self, gallery_id):
-        stinger_id_list = []
-        with sqlite3.connect(self.save_path) as conn:
-            res = conn.execute(
-                """
-                SELECT s_id FROM gsting
-                WHERE g_id = ?
-                """,
-                (gallery_id,),
-            )
-            stinger_id_list = res.fetchall()
-
-        total = []
-        for id in stinger_id_list:
-            stinger = self.get_stinger(id[0])
-            if stinger:
-                total.append(stinger)
-
-        return total
-
-    def get_or_create_thumbnail_path(self, path):
-
-        # Use the gallery path as a unique cache key
-        cache_key = hashlib.md5(str(path).encode()).hexdigest()
-        thumb_path = self.CACHE_DIR / f"{cache_key}.png"
-
-        if not thumb_path.exists():
-            if (
-                path.is_file()
-                and path.suffix.lower() in self.config["image_types"]
-            ):
-                with Image.open(path) as img:
-                    img.thumbnail((140, 140))
-                    img.save(thumb_path, "PNG")
-
-            elif path.is_dir():
-                images = self.list_images(path)
-                if images:
-                    image = images[0].path
-                    # Downscale and save to cache
-                    with Image.open(image) as img:
-                        img.thumbnail((140, 140))
-                        img.save(thumb_path, "PNG")
-                else:
-                    thumb_path = self.default_thumbnail
-            else:
-                thumb_path = self.default_thumbnail
-
-        return thumb_path
-
-    def remember_gallery(self, path, name):
-        """Save a path and a name to the database"""
-
-        icon = self.get_or_create_thumbnail_path(path)
-
-        path = Path(path).resolve()
-        if not path.is_dir():
-            return False
-
-        with sqlite3.connect(self.save_path) as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys = ON")
-            conn.execute(
-                "INSERT OR IGNORE INTO galleries (path, name, icon) VALUES (?, ?, ?)",
-                (str(path), name, str(icon)),
-            )
-
-        return True
-
-    def remember_stinger(self, path, name):
-        """Save a path and a name to the database"""
-
-        if path.is_dir():
-            return False
-
-        path = path.copy_into(self.stinger_dir)
-        icon = self.get_or_create_thumbnail_path(path)
-
-        with sqlite3.connect(self.save_path) as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys = ON")
-            conn.execute(
-                "INSERT OR IGNORE INTO stingers (path, name, icon) VALUES (?, ?, ?)",
-                (str(path), name, str(icon)),
-            )
-
-        return True
-
-    def update_stinger(self, id, name):
-        """Save a path and a name to the database"""
-
-        with sqlite3.connect(self.save_path) as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys = ON")
-            conn.execute(
-                "UPDATE stingers SET name = ? WHERE id = ?",
-                (name, id),
-            )
-
-    def forget_stinger(self, path):
-        """Remove a gallery from the database.
-        Delete by path because name will not be unique."""
-
-        with sqlite3.connect(self.save_path) as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys = ON")
-            res = conn.execute(
-                "SELECT icon FROM stingers WHERE path = ?",
-                (str(path.resolve()),),
-            )
-            has_icon_path = res.fetchone()
-
-            if has_icon_path:
-                icon_path = has_icon_path[0]
-            else:
-                icon_path = None
-
-            conn.execute(
-                "DELETE FROM stingers WHERE path = ?",
-                (str(path.resolve()),),
-            )
-
-            if icon_path:
-                icon_path = Path(icon_path)
-                if icon_path != self.default_thumbnail:
-                    icon_path.unlink()
-
-            if path.exists():
-                path.unlink()
-
-    def stinger_remove_from_gallery(self, gallery_id):
-        with sqlite3.connect(self.save_path) as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys = ON")
-            conn.execute(
-                """
-                DELETE FROM gsting WHERE g_id = ?
-            """,
-                (gallery_id,),
-            )
-
-    def remember_gallery_icon(self, gallery_path, icon_path):
-        with sqlite3.connect(self.save_path) as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys = ON")
-            conn.execute(
-                "UPDATE galleries SET icon = ? WHERE path = ?",
-                (icon_path, str(gallery_path.resolve())),
-            )
-
-    def update_gallery_icon(self, gallery_path, icon_path):
-        with sqlite3.connect(self.save_path) as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys = ON")
-            conn.execute(
-                "UPDATE galleries SET icon = ? WHERE path = ?",
-                (icon_path, str(gallery_path.resolve())),
-            )
-
-    def forget_gallery(self, path):
-        """Remove a gallery from the database.
-        Delete by path because name will not be unique."""
-
-        with sqlite3.connect(self.save_path) as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys = ON")
-            res = conn.execute(
-                "SELECT icon FROM galleries WHERE path = ?",
-                (str(path.resolve()),),
-            )
-            row = res.fetchone()
-            if row:
-                icon_path = row[0]
-            else:
-                icon_path = None
-
-            conn.execute(
-                "DELETE FROM galleries WHERE path = ?",
-                (str(path.resolve()),),
-            )
-
-            if icon_path:
-                icon_path = Path(icon_path)
-                if icon_path != self.default_thumbnail:
-                    icon_path.unlink()
-
-    def get_images_for_path(self, path):
-        with sqlite3.connect(self.save_path) as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys = ON")
-            res = conn.execute(
-                """
-                SELECT ipath, iname FROM images 
-                JOIN galleries ON images.gallery_id = galleries.id
-                WHERE path = ?
-                """,
-                (str(path.resolve()),),
-            )
-            images = res.fetchall()
-            if images:
-                d = {path: name for path, name in images}
-                return d
-            else:
-                return {}
-
-    def save_image_name(self, gallery_path, image_path, name):
-        """Save or update the display name for a single image."""
-        with sqlite3.connect(self.save_path) as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys = ON")
-            res = conn.execute(
-                "SELECT id FROM galleries WHERE path = ?",
-                (str(gallery_path.resolve()),),
-            )
-            has_id = res.fetchone()
-            if not has_id:
-                return
-
-            gallery_id = has_id[0]
-            res = conn.execute(
-                "SELECT id FROM images WHERE gallery_id = ? AND ipath = ?",
-                (gallery_id, str(image_path.resolve())),
-            )
-            existing = res.fetchone()
-            if existing:
-                conn.execute(
-                    "UPDATE images SET iname = ? WHERE id = ?",
-                    (name, existing[0]),
-                )
-            else:
-                conn.execute(
-                    "INSERT INTO images (gallery_id, ipath, iname) VALUES (?, ?, ?)",
-                    (gallery_id, str(image_path.resolve()), name),
-                )
-
-    def list_images(self, path, recursive=False):
-
-        named_images = self.get_images_for_path(path)
-
-        path_and_names = []
-        for f in path.iterdir():
-            if f.is_file() and f.suffix.lower() in self.config["image_types"]:
-                if named_images.get(str(f)):
-                    name = named_images.get(str(f))
-                else:
-                    name = f.stem
-
-                path_and_names.append(GalleryImage(path=Path(f), name=name, img=None))
-
-        return path_and_names
-
-    def gallery_query_to_dict(self, id, path, name, icon, sort, loop, captions):
-        gallery = {}
-        gallery_dir = Path(path)
-        gallery["id"] = id
-        gallery["path"] = gallery_dir
-        gallery["name"] = name
-        gallery["icon"] = Path(icon) if icon else None
-        gallery["sort"] = SortOrder.from_int(sort)
-        gallery["loop"] = True if loop == 1 else False
-        gallery["captions"] = True if captions == 1 else False
-        gallery["stingers"] = self.get_stingers_for_gallery(id)
-
-        if gallery_dir.is_dir():
-            gallery["valid"] = True
-            gallery["images"] = self.list_images(gallery_dir)
-
-        else:
-            gallery["valid"] = False
-            gallery["images"] = None
-
-        return gallery
-
-    def list_galleries(self):
-        """Get all of the data from the galleries table"""
-
-        galleries = []
-        with sqlite3.connect(self.save_path) as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys = ON")
-            res = conn.execute(
-                "SELECT id, path, name, icon , sort, loop, captions FROM galleries"
-            )
-            for gallery_data in res.fetchall():
-                if gallery_data:
-                    id, path, name, icon, sort, loop, captions = gallery_data
-                    gallery = self.gallery_query_to_dict(
-                        id, path, name, icon, sort, loop, captions
-                    )
-                    galleries.append(gallery)
-
-        return galleries
-
-    def scan_gallery(self, gallery_path):
-        """Scan one gallery and return its metadata."""
-
-        gallery_path = gallery_path.resolve()
-
-        with sqlite3.connect(self.save_path) as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys = ON")
-            res = conn.execute(
-                "SELECT id, path, name, icon, sort, loop, captions FROM galleries WHERE path = ?",
-                (str(gallery_path),),
-            )
-
-            row = res.fetchone()
-
-            if row is None:
-                return None
-            else:
-                if row:
-                    id, path, name, icon, sort, loop, captions = row
-                    return self.gallery_query_to_dict(
-                        id, path, name, icon, sort, loop, captions
-                    )
+        self.gear_icon = GalleryImage(path=path, name="trash", img=img)
