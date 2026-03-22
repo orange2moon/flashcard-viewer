@@ -1,16 +1,13 @@
 import sqlite3
 from flashcard_viewer.storage_errors import StorageErrors
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
+from PIL import ImageTk, Image, ImageDraw, ImageFont
 from datetime import datetime
 import tomllib
 import tomli_w
 import hashlib
 import math
 from enum import Enum
-import tkinter.font as tkfont
-
-from dataclasses import dataclass
 
 
 class SortOrder(Enum):
@@ -51,6 +48,7 @@ class GalleryImage:
         self.path = path
         self.name = name
         self.img = img  # None means "not loaded"
+        self.imgTk = None
 
     def load(self):
         if self.path and self.path.is_file():
@@ -70,6 +68,13 @@ class GalleryImage:
         if self.img is None:
             self.load()
         return self.img
+
+    def get_imgTk(self):
+        if self.img is None:
+            self.load()
+        if self.imgTk is None:
+            self.imgTk = ImageTk.PhotoImage(self.img)
+        return self.imgTk
 
     def sort_key(self):
         return self.path.stem.lower() if self.path else "z"
@@ -112,7 +117,7 @@ class DataStorage:
         if not self.STINGER_DIR.exists():
             self.STINGER_DIR.mkdir(parents=True, exist_ok=True)
 
-        if not self.CACH_DIR.exists():
+        if not self.CACHE_DIR.exists():
             self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -123,7 +128,7 @@ class DataStorage:
 
         # The default thumbnail is kept in the GalleryImage class
         # as a class variable
-        self._ensure_default_thumbnail(self.ASSETS_DIR / "default.png")
+        self._ensure_default_thumbnail(path=self.ASSETS_DIR / "default.png")
 
         self.trash_icon = None
         self._ensure_default_trash_icon(self.ASSETS_DIR / "trash.png")
@@ -364,8 +369,8 @@ class DataStorage:
 
         stinger["id"] = id
         stinger["image"] = GalleryImage(path=path, name=name)
-        stinger["image"].load()
-        stinger["icon"] = Path(icon) if icon else None
+        icon = Path(icon) if icon else None
+        stinger["icon"] = GalleryImage(path=icon, name=name)
 
         return stinger
 
@@ -432,7 +437,7 @@ class DataStorage:
 
         return total
 
-    def get_or_create_thumbnail_path(self, gallery_path):
+    def get_or_create_thumbnail_path(self, gallery_path, size=(150, 150)):
 
         # Use the gallery path as a unique cache key
         cache_key = hashlib.md5(str(gallery_path).encode()).hexdigest()
@@ -443,6 +448,7 @@ class DataStorage:
 
         if gallery_path is None:
             img = GalleryImage.default_img.copy()
+            img.thumbnail(size)
             img.save(thumb_path, "PNG")
             return thumb_path
 
@@ -451,7 +457,7 @@ class DataStorage:
             and gallery_path.suffix.lower() in self.config["image_types"]
         ):
             with Image.open(gallery_path) as img:
-                img.thumbnail((140, 140))
+                img.thumbnail((size))
                 img.save(thumb_path, "PNG")
                 return thumb_path
 
@@ -459,13 +465,14 @@ class DataStorage:
             images = self.list_images(gallery_path)
             if images and len(images) > 0:
                 first_img = images[0]
-                img = first_img.get_image().copy()
+                img = first_img.get_img().copy()
                 first_img.close()
-                img.thumbnail((140, 140))
+                img.thumbnail(size)
                 img.save(thumb_path, "PNG")
                 return thumb_path
 
         img = GalleryImage.default_img.copy()
+        img.thumbnail(size)
         img.save(thumb_path, "PNG")
         return thumb_path
 
@@ -495,7 +502,7 @@ class DataStorage:
             return False
 
         path = path.copy_into(self.STINGER_DIR)
-        icon = self.get_or_create_thumbnail_path(path)
+        icon = self.get_or_create_thumbnail_path(path, size=(80,80))
 
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA journal_mode=WAL")
@@ -543,7 +550,7 @@ class DataStorage:
 
             if icon_path:
                 icon_path = Path(icon_path)
-                if icon_path != self.default_thumbnail:
+                if icon_path != GalleryImage.default_path.resolve():
                     icon_path.unlink()
 
             if path.exists():
@@ -602,7 +609,7 @@ class DataStorage:
 
             if icon_path:
                 icon_path = Path(icon_path)
-                if icon_path != self.default_thumbnail:
+                if icon_path != GalleryImage.default_path.resolve():
                     icon_path.unlink()
 
     def get_images_for_path(self, path):
@@ -676,7 +683,8 @@ class DataStorage:
         gallery["id"] = id
         gallery["path"] = gallery_dir
         gallery["name"] = name
-        gallery["icon"] = Path(icon) if icon else None
+        icon = Path(icon) if icon else None
+        gallery["icon"] = GalleryImage(path=icon, name=str(gallery_dir.resolve()))
         gallery["sort"] = SortOrder.from_int(sort)
         gallery["loop"] = True if loop == 1 else False
         gallery["captions"] = True if captions == 1 else False
@@ -862,7 +870,7 @@ class DataStorage:
         return img
 
     def _ensure_default_end_flashcard(self, path):
-        if not path or isinstance(path, Path):
+        if not path or not isinstance(path, Path):
             raise RuntimeError("No default image path")
 
         img = None
@@ -870,11 +878,11 @@ class DataStorage:
             img = self._draw_green_checkmark()
             img.save(path)
 
-        self.end_flashcard = GalleryImage(path=path, name="trash", img=img)
+        self.end_flashcard = GalleryImage(path=path, name="The End", img=img)
 
-    def _ensure_default_thumbnail(self, path:Path | None = None):
+    def _ensure_default_thumbnail(self, path:Path):
 
-        if not path or isinstance(path, Path):
+        if not path or not isinstance(path, Path):
             raise RuntimeError("No default image path")
 
         if not path.is_file():
@@ -890,18 +898,18 @@ class DataStorage:
 
 
     def _ensure_default_trash_icon(self, path):
-        if not path or isinstance(path, Path):
+        if not path or not isinstance(path, Path):
             raise RuntimeError("No default image path")
 
         img = None
         if not path.is_file():
-            img = self._draw_question_mark()
+            img = self._draw_trash_icon()
             img.save(path)
 
         self.trash_icon = GalleryImage(path=path, name="trash", img=img)
 
     def _ensure_default_settings_icon(self, path):
-        if not path or isinstance(path, Path):
+        if not path or not isinstance(path, Path):
             raise RuntimeError("No default image path")
 
         img = None
@@ -909,4 +917,4 @@ class DataStorage:
             img = self._draw_gear_icon()
             img.save(path)
 
-        self.gear_icon = GalleryImage(path=path, name="trash", img=img)
+        self.gear_icon = GalleryImage(path=path, name="gear", img=img)
