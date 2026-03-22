@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flashcard-viewer"
-version = "2026.03.12"
+version = "2026.03.23"
 description = "Displays images flashcard style"
 readme = "README.MD"
 requires-python = ">=3.14,<3.15"

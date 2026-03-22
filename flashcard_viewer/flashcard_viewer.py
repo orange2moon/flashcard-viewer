@@ -14,12 +14,6 @@ import random
 from PIL import Image, ImageTk
 import tkinter.font as tkfont
 
-# Testing
-import psutil
-import os
-
-process = psutil.Process(os.getpid())
-
 from flashcard_viewer.data_storage import DataStorage, GalleryImage
 from flashcard_viewer.image_folder_browser import ImageFolderBrowser
 from flashcard_viewer.image_file_browser import ImageFileBrowser
@@ -270,7 +264,6 @@ class FlashCardViewer(ttk.Frame):
         tile_width = 160
         tile_height = 180
         padding = 20
-        mem = process.memory_info().rss / 1024**2, "MB"
 
         cols = max(1, canvas.winfo_width() // (tile_width + padding))
 
@@ -682,7 +675,6 @@ class FlashCardViewer(ttk.Frame):
 
         self._settings_popup = frame
 
-    ## 60% sure the memory leak is here
     def get_gallery_thumbnail(self, gallery: dict) -> ImageTk:
         """Loads and caches gallery thumbnails"""
 
@@ -1331,6 +1323,12 @@ class FlashCardViewer(ttk.Frame):
 
 
 def main():
+    import sys
+    if "-v" in sys.argv or "--version" in sys.argv:
+        from importlib.metadata import version
+        print(version("flashcard-viewer"))
+        return
+
     root = ttk.Window("Flashcard Viewer", "sandstone")
 
     # Get screen dimensions in pixels and DPI
