@@ -63,6 +63,8 @@ class FlashCardViewer(ttk.Frame):
         self.use_stingers = False
         self._resize_job = None
         self.current_images = []
+        self.current_stingers = []
+        self.show_stinger = False
         self.current_image = None
         self.current_image_index = 0
         self.current_image_index_max = 0
@@ -70,7 +72,6 @@ class FlashCardViewer(ttk.Frame):
         self.sort = SortOrder(0)
         self.loop = True
         self.captions = True
-        self.show_stinger = False
         self.new_config = False
         self.is_fullscreen = False
         self.show_active = False
@@ -791,9 +792,13 @@ class FlashCardViewer(ttk.Frame):
         if not gallery or not gallery["valid"]:
             return
 
-        if len(self.current_images) > 0:
+        if self.current_images and len(self.current_images) > 0:
             for gimage in self.current_images:
                 gimage.close()
+
+        if self.current_stingers and len(self.current_stingers) > 0:
+            for simage in self.current_stingers:
+                simage.close()
 
         self.current_images = gallery.get("images", [])
         self.sort = gallery.get("sort", SortOrder.RANDOM)
@@ -802,8 +807,13 @@ class FlashCardViewer(ttk.Frame):
         self.current_stingers = [x.get("image") for x in gallery.get("stingers", [])]
         self.use_stingers = True if len(self.current_stingers) > 0 else False
 
-        for gimage in self.current_images:
-            gimage.load()
+        if len(self.current_images) > 0:
+            for gimage in self.current_images:
+                gimage.load()
+
+        if len(self.current_stingers) > 0:
+            for simage in self.current_stingers:
+                simage.load()
 
         if not self.current_images:
             return
@@ -831,13 +841,21 @@ class FlashCardViewer(ttk.Frame):
         self.show_card()
 
     def stinger_time(self):
-        percent = self.storage.config.get("percent", 20)
-        if percent > 100:
-            percent = 100
-        elif percent < 0:
-            percent = 0
+        # prevent showing a stinger flashcard back to back
+        if not self.show_stinger:
+            percent = self.storage.config.get("percent", 20)
+            if percent > 100:
+                percent = 100
+            elif percent < 0:
+                percent = 0
 
-        return random.random() < percent / 100
+            self.show_stinger = True
+            return random.random() < percent / 100
+
+        else:
+            self.show_stinger = False
+            return False
+
 
     def prev_card(self, event=None):
         # don't progress when not on the present tab

@@ -63,6 +63,7 @@ class GalleryImage:
 
     def close(self):
         self.img = None
+        self.imgTk = None
 
     def get_img(self):
         if self.img is None:
@@ -392,11 +393,15 @@ class DataStorage:
 
         return stingers
 
-    def get_stinger(self, id: int):
+    def get_stinger(self, id: int) -> {}:
         """Get all of the data from the stingers table
-        path: the path to the image file
-        name: the canonical name for the stinger
-        icon: the 400x400 icon image file
+        1. inputs
+        id:<int> the id of the stinger
+
+        2. Outputs: stinger_dict
+        id:<int>
+        image:<GalleryImage>
+        icon:<GalleryImage>
         """
 
         stinger = {}
