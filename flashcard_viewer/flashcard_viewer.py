@@ -999,13 +999,21 @@ class FlashCardViewer(ttk.Frame):
             (0, 0), window=frame, anchor="nw"
         )
 
+        def update_scrollregion():
+            content_h = frame.winfo_reqheight()
+            canvas_h = scroll_canvas.winfo_height()
+            scroll_canvas.configure(
+                scrollregion=(0, 0, scroll_canvas.winfo_width(), max(content_h, canvas_h))
+            )
+
         def on_frame_configure(e):
-            scroll_canvas.configure(scrollregion=scroll_canvas.bbox("all"))
+            scroll_canvas.after_idle(update_scrollregion)
 
         frame.bind("<Configure>", on_frame_configure)
 
         def on_canvas_resize(e):
             scroll_canvas.itemconfig(frame_window, width=e.width)
+            scroll_canvas.after_idle(update_scrollregion)
 
         scroll_canvas.bind("<Configure>", on_canvas_resize)
 
