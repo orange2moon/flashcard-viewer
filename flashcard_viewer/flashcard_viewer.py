@@ -1003,7 +1003,12 @@ class FlashCardViewer(ttk.Frame):
             content_h = frame.winfo_reqheight()
             canvas_h = scroll_canvas.winfo_height()
             scroll_canvas.configure(
-                scrollregion=(0, 0, scroll_canvas.winfo_width(), max(content_h, canvas_h))
+                scrollregion=(
+                    0,
+                    0,
+                    scroll_canvas.winfo_width(),
+                    max(content_h, canvas_h),
+                )
             )
 
         def on_frame_configure(e):
@@ -1078,6 +1083,107 @@ class FlashCardViewer(ttk.Frame):
 
         ttk.Separator(frame).pack(fill=X, pady=5)
 
+        ## --- Font ---
+        ttk.Label(frame, text="Font", font=self.gallery_font).pack(anchor=W)
+
+        self.selected_font = tk.StringVar(value=self.fonts[0])
+        self.selected_font.trace_add("write", self.update_font)
+
+        font_row = ttk.Frame(frame)
+        font_row.pack(anchor=W)
+        font_row.columnconfigure(0, weight=1, uniform="font_row")
+        # font_row.columnconfigure(1, weight=1, uniform="font_row")
+
+        font_box = ttk.Combobox(
+            font_row,
+            textvariable=self.selected_font,
+            values=[afont for afont in self.fonts],
+            state="readonly",
+        )
+
+        font_box.grid(row=0, column=0, padx=50)
+
+        self.preview_canvas = tk.Canvas(
+            font_row,
+            width=250,
+            height=self.preview_font_clearance,
+            highlightthickness=0,
+        )
+        self.preview_canvas.grid(row=0, column=1)
+
+        self.preview_text = self.preview_canvas.create_text(
+            self.preview_canvas.winfo_reqwidth() // 2,
+            self.preview_canvas.winfo_reqheight() // 2,
+            text="Font Preview",
+            fill=self.style.colors.fg,
+            font=self.preview_font,
+            anchor="center",
+        )
+
+        ## --- Theme ---
+        themes = [t.title() for t in self.style.theme_names()]
+        theme_var = ttk.StringVar(value=self.style.theme_use().title())
+
+        ttk.Label(frame, text="Theme", font=self.gallery_font).pack(
+            anchor=W, pady=(20, 15)
+        )
+
+        theme_box = ttk.Combobox(
+            frame,
+            textvariable=theme_var,
+            values=themes,
+            state="readonly",
+            width=15,
+        )
+
+        theme_box.pack(anchor=W, padx=50, pady=(0, 20))
+
+        def change_theme(event=None):
+            theme = theme_var.get().lower()
+            self.style.theme_use(theme)
+            self.storage.config["theme"] = theme
+            if self.preview_canvas:
+                fg = self.style.colors.fg
+                self.preview_canvas.itemconfig(self.preview_text, fill=fg)
+            # update the grid so the background changes
+            self.refresh_stinger_grid()
+            self.new_config = True
+
+        theme_box.bind("<<ComboboxSelected>>", change_theme)
+
+        # --- Image Types ---
+        def update_image_types(*args):
+            selected = [
+                ext for ext, var in self._image_type_vars.items() if var.get()
+            ]
+            self.storage.config["image_types"] = selected
+            self.new_config = True
+
+        ttk.Label(frame, text="Image Types", font=self.gallery_font).pack(
+            anchor=W, pady=(0, 5)
+        )
+
+        type_map = [
+            (".png", "PNG"),
+            (".webp", "WEBP"),
+            (".jpg", "JPEG"),
+            (".tiff", "TIFF"),
+        ]
+        current_types = self.storage.config.get(
+            "image_types", self.storage.default_image_types
+        )
+        self._image_type_vars = {}
+
+        type_frame = ttk.Frame(frame)
+        type_frame.pack(anchor=W, pady=(0, 10))
+        for ext, label in type_map:
+            var = ttk.BooleanVar(value=ext in current_types)
+            var.trace_add("write", update_image_types)
+            self._image_type_vars[ext] = var
+            ttk.Checkbutton(type_frame, text=label, variable=var).pack(
+                side=LEFT, padx=(50, 0)
+            )
+
         # --- Stingers ---
         ttk.Label(
             frame, text="Add A Stinger Flashcard", font=self.gallery_font
@@ -1114,111 +1220,6 @@ class FlashCardViewer(ttk.Frame):
         )
 
         ttk.Separator(frame).pack(fill=X, pady=10)
-        # -----------------------------------------
-
-        ## --- Font ---
-        ttk.Label(frame, text="Font", font=self.gallery_font).pack(anchor=W)
-
-        self.selected_font = tk.StringVar(value=self.fonts[0])
-        self.selected_font.trace_add("write", self.update_font)
-
-        font_row = ttk.Frame(frame)
-        font_row.pack(anchor=W)
-        font_row.columnconfigure(0, weight=1, uniform="font_row")
-        # font_row.columnconfigure(1, weight=1, uniform="font_row")
-
-        font_box = ttk.Combobox(
-            font_row,
-            textvariable=self.selected_font,
-            values=[afont for afont in self.fonts],
-            state="readonly",
-        )
-
-        font_box.grid(row=0, column=0, padx=50)
-
-        self.preview_canvas = tk.Canvas(
-            font_row,
-            width=300,
-            height=self.preview_font_clearance,
-            highlightthickness=0,
-        )
-        self.preview_canvas.grid(row=0, column=1)
-
-        self.preview_text = self.preview_canvas.create_text(
-            self.preview_canvas.winfo_reqwidth() // 2,
-            self.preview_canvas.winfo_reqheight() // 2,
-            text="Font Preview",
-            fill=self.style.colors.fg,
-            font=self.preview_font,
-            anchor="center",
-        )
-
-        ttk.Separator(frame).pack(fill=X, pady=10)
-        ## --- Theme ---
-        themes = [t.title() for t in self.style.theme_names()]
-        theme_var = ttk.StringVar(value=self.style.theme_use().title())
-
-        ttk.Label(frame, text="Theme", font=self.gallery_font).pack(
-            anchor=W, pady=(20, 15)
-        )
-
-        theme_box = ttk.Combobox(
-            frame,
-            textvariable=theme_var,
-            values=themes,
-            state="readonly",
-            width=15,
-        )
-
-        theme_box.pack(anchor=W, padx=50, pady=(0, 20))
-
-        def change_theme(event=None):
-            theme = theme_var.get().lower()
-            self.style.theme_use(theme)
-            self.storage.config["theme"] = theme
-            if self.preview_canvas:
-                fg = self.style.colors.fg
-                self.preview_canvas.itemconfig(self.preview_text, fill=fg)
-            # update the grid so the background changes
-            self.refresh_stinger_grid()
-            self.new_config = True
-
-        theme_box.bind("<<ComboboxSelected>>", change_theme)
-
-        ttk.Separator(frame).pack(fill=X, pady=10)
-
-        # --- Image Types ---
-        def update_image_types(*args):
-            selected = [
-                ext for ext, var in self._image_type_vars.items() if var.get()
-            ]
-            self.storage.config["image_types"] = selected
-            self.new_config = True
-
-        ttk.Label(frame, text="Image Types", font=self.gallery_font).pack(
-            anchor=W, pady=(0, 5)
-        )
-
-        type_map = [
-            (".png", "PNG"),
-            (".webp", "WEBP"),
-            (".jpg", "JPEG"),
-            (".tiff", "TIFF"),
-        ]
-        current_types = self.storage.config.get(
-            "image_types", self.storage.default_image_types
-        )
-        self._image_type_vars = {}
-
-        type_frame = ttk.Frame(frame)
-        type_frame.pack(anchor=W, pady=(0, 10))
-        for ext, label in type_map:
-            var = ttk.BooleanVar(value=ext in current_types)
-            var.trace_add("write", update_image_types)
-            self._image_type_vars[ext] = var
-            ttk.Checkbutton(type_frame, text=label, variable=var).pack(
-                side=LEFT, padx=(50, 10)
-            )
 
         return outer
 
@@ -1310,6 +1311,7 @@ class FlashCardViewer(ttk.Frame):
 
             canvas.delete("stinger_editor")
             entry.destroy()
+            self.stingers = []
             self.refresh_stinger_grid()
 
         entry.bind("<Return>", save_name)
