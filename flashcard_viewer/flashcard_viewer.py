@@ -35,10 +35,16 @@ class FlashCardViewer(ttk.Frame):
         self.preview_canvas = None
         self.gallery_font = tkfont.Font(size=14, weight="bold")
         self.caption_font = tkfont.Font(size=85, weight="bold")
+        self.preview_font = tkfont.Font(size=24, weight="bold")
         font_height = self.caption_font.metrics("linespace")
         # Add some padding (e.g. the label's internal padding)
         # 20px for breathing room
         self.caption_font_clearance = font_height + 20
+
+        font_height = self.preview_font.metrics("linespace")
+        # Add some padding (e.g. the label's internal padding)
+        # 20px for breathing room
+        self.preview_font_clearance = font_height + 5
         self._resize_job = None
 
         self.setting_font = tkfont.Font(size=10, weight="bold")
@@ -75,7 +81,6 @@ class FlashCardViewer(ttk.Frame):
         self.new_config = False
         self.is_fullscreen = False
         self.show_active = False
-
 
         # notebook
         self.noteb = ttk.Notebook(self, bootstyle="light")
@@ -250,7 +255,7 @@ class FlashCardViewer(ttk.Frame):
 
     def refresh_gallery_grid(self, new=False):
         canvas = self.gallery_canvas
-        if hasattr(self, '_gallery_tag_funcids'):
+        if hasattr(self, "_gallery_tag_funcids"):
             for tag, seq, funcid in self._gallery_tag_funcids:
                 canvas.tag_unbind(tag, seq, funcid)
         self._gallery_tag_funcids = []
@@ -260,7 +265,6 @@ class FlashCardViewer(ttk.Frame):
         if new or self.galleries is None:
             self.galleries = self.storage.list_galleries()
             updated_galleries = True
-
 
         tile_width = 160
         tile_height = 180
@@ -320,7 +324,10 @@ class FlashCardViewer(ttk.Frame):
             if self.edit_mode:
                 canvas.create_image(
                     x + tile_width - 4,
-                    y + tile_height - 4 - self.storage.trash_icon.get_img().height,
+                    y
+                    + tile_height
+                    - 4
+                    - self.storage.trash_icon.get_img().height,
                     image=self.storage.trash_icon.get_imgTk(),
                     anchor=NE,
                     tags=(f"trash_{i}",),
@@ -334,45 +341,69 @@ class FlashCardViewer(ttk.Frame):
                 tags=(f"settings_{i}",),
             )
             # Bind clicks per tile using tags
-            self._gallery_tag_funcids.append((
-                f"tile_{i}", "<Button-1>",
-                canvas.tag_bind(
-                    f"tile_{i}", "<Button-1>",
-                    lambda e, g=gallery["path"]: self.open_gallery(g),
-                ),
-            ))
-            self._gallery_tag_funcids.append((
-                f"settings_{i}", "<Button-1>",
-                canvas.tag_bind(
-                    f"settings_{i}", "<Button-1>",
-                    lambda e, g=gallery: self.open_gallery_settings(g, x, y),
-                ),
-            ))
-            self._gallery_tag_funcids.append((
-                f"trash_{i}", "<Button-1>",
-                canvas.tag_bind(
-                    f"trash_{i}", "<Button-1>",
-                    lambda e, p=gallery["path"]: self.delete_gallery(p),
-                ),
-            ))
-            self._gallery_tag_funcids.append((
-                f"tile_{i}", "<Enter>",
-                canvas.tag_bind(
-                    f"tile_{i}", "<Enter>",
-                    lambda e, tag=f"tile_bg_{i}": self.gallery_canvas.itemconfig(
-                        tag, fill=self.style.colors.selectbg
+            self._gallery_tag_funcids.append(
+                (
+                    f"tile_{i}",
+                    "<Button-1>",
+                    canvas.tag_bind(
+                        f"tile_{i}",
+                        "<Button-1>",
+                        lambda e, g=gallery["path"]: self.open_gallery(g),
                     ),
-                ),
-            ))
-            self._gallery_tag_funcids.append((
-                f"tile_{i}", "<Leave>",
-                canvas.tag_bind(
-                    f"tile_{i}", "<Leave>",
-                    lambda e, tag=f"tile_bg_{i}": self.gallery_canvas.itemconfig(
-                        tag, fill=self.style.colors.bg
+                )
+            )
+            self._gallery_tag_funcids.append(
+                (
+                    f"settings_{i}",
+                    "<Button-1>",
+                    canvas.tag_bind(
+                        f"settings_{i}",
+                        "<Button-1>",
+                        lambda e, g=gallery: self.open_gallery_settings(g, x, y),
                     ),
-                ),
-            ))
+                )
+            )
+            self._gallery_tag_funcids.append(
+                (
+                    f"trash_{i}",
+                    "<Button-1>",
+                    canvas.tag_bind(
+                        f"trash_{i}",
+                        "<Button-1>",
+                        lambda e, p=gallery["path"]: self.delete_gallery(p),
+                    ),
+                )
+            )
+            self._gallery_tag_funcids.append(
+                (
+                    f"tile_{i}",
+                    "<Enter>",
+                    canvas.tag_bind(
+                        f"tile_{i}",
+                        "<Enter>",
+                        lambda e, tag=f"tile_bg_{i}": (
+                            self.gallery_canvas.itemconfig(
+                                tag, fill=self.style.colors.selectbg
+                            )
+                        ),
+                    ),
+                )
+            )
+            self._gallery_tag_funcids.append(
+                (
+                    f"tile_{i}",
+                    "<Leave>",
+                    canvas.tag_bind(
+                        f"tile_{i}",
+                        "<Leave>",
+                        lambda e, tag=f"tile_bg_{i}": (
+                            self.gallery_canvas.itemconfig(
+                                tag, fill=self.style.colors.bg
+                            )
+                        ),
+                    ),
+                )
+            )
         # Update scroll region
         total_rows = -(-len(self.galleries) // cols)  # ceiling division
         total_height = total_rows * (tile_height + padding) + padding
@@ -404,16 +435,19 @@ class FlashCardViewer(ttk.Frame):
         gallery = self.storage.scan_gallery(gallery["path"])
         if gallery is None:
             return
-        popup_w = 800
-        popup_h = 900
-        radius = 15
-        shadow_offset = 6
-        border = 2
 
         canvas = self.gallery_canvas
         canvas_width = canvas.winfo_width()
         canvas_height = canvas.winfo_height()
         scroll_offset = canvas.canvasy(0)
+
+        popup_w = 800
+        if popup_w > canvas_width:
+            popup_w = canvas_width - 20
+        popup_h = canvas_height - 20
+        radius = 15
+        shadow_offset = 6
+        border = 2
 
         px = (canvas_width - popup_w) // 2
         py = (canvas_height - popup_h) // 2 + scroll_offset
@@ -717,6 +751,7 @@ class FlashCardViewer(ttk.Frame):
 
     def update_font(self, *args):
         self.caption_font.config(family=self.selected_font.get())
+        self.preview_font.config(family=self.selected_font.get())
         self.storage.config["font"] = self.selected_font.get()
 
     # -------------------------
@@ -804,7 +839,9 @@ class FlashCardViewer(ttk.Frame):
         self.sort = gallery.get("sort", SortOrder.RANDOM)
         self.loop = gallery.get("loop", True)
         self.captions = gallery.get("captions", True)
-        self.current_stingers = [x.get("image") for x in gallery.get("stingers", [])]
+        self.current_stingers = [
+            x.get("image") for x in gallery.get("stingers", [])
+        ]
         self.use_stingers = True if len(self.current_stingers) > 0 else False
 
         if len(self.current_images) > 0:
@@ -855,7 +892,6 @@ class FlashCardViewer(ttk.Frame):
         else:
             self.show_stinger = False
             return False
-
 
     def prev_card(self, event=None):
         # don't progress when not on the present tab
@@ -943,26 +979,143 @@ class FlashCardViewer(ttk.Frame):
                 compound="top",
             )
 
-
     # -------------------------
     # Settings Tab
     # -------------------------
     def settings(self, notebook):
-        frame = ttk.Frame(notebook, padding=10)
+        outer = ttk.Frame(notebook)
+
+        scrollbar = ttk.Scrollbar(outer, orient=VERTICAL)
+        scrollbar.pack(side=RIGHT, fill=Y)
+
+        scroll_canvas = tk.Canvas(
+            outer, yscrollcommand=scrollbar.set, highlightthickness=0
+        )
+        scroll_canvas.pack(side=LEFT, fill=BOTH, expand=True)
+        scrollbar.configure(command=scroll_canvas.yview)
+
+        frame = ttk.Frame(scroll_canvas, padding=10)
+        frame_window = scroll_canvas.create_window(
+            (0, 0), window=frame, anchor="nw"
+        )
+
+        def on_frame_configure(e):
+            scroll_canvas.configure(scrollregion=scroll_canvas.bbox("all"))
+
+        frame.bind("<Configure>", on_frame_configure)
+
+        def on_canvas_resize(e):
+            scroll_canvas.itemconfig(frame_window, width=e.width)
+
+        scroll_canvas.bind("<Configure>", on_canvas_resize)
+
+        def on_mousewheel(e):
+            scroll_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+
+        def on_scroll_up(e):
+            scroll_canvas.yview_scroll(-1, "units")
+
+        def on_scroll_down(e):
+            scroll_canvas.yview_scroll(1, "units")
+
+        def _bind_scroll(e=None):
+            scroll_canvas.bind_all("<MouseWheel>", on_mousewheel)
+            scroll_canvas.bind_all("<Button-4>", on_scroll_up)
+            scroll_canvas.bind_all("<Button-5>", on_scroll_down)
+
+        def _unbind_scroll(e=None):
+            x, y = e.x_root, e.y_root
+            rx, ry = outer.winfo_rootx(), outer.winfo_rooty()
+            if not (
+                rx <= x < rx + outer.winfo_width()
+                and ry <= y < ry + outer.winfo_height()
+            ):
+                scroll_canvas.unbind_all("<MouseWheel>")
+                scroll_canvas.unbind_all("<Button-4>")
+                scroll_canvas.unbind_all("<Button-5>")
+
+        outer.bind("<Enter>", _bind_scroll, add="+")
+        outer.bind("<Leave>", _unbind_scroll, add="+")
 
         ### Theme and Label Font
         #   | theme  | Font  | Font preview
         ## --- Theme ---
 
-        ttk.Label(frame, text="Font", font=self.gallery_font).pack(
-            anchor=W, pady=(20, 15)
+        # -- Stinger Probability --
+        ttk.Label(
+            frame,
+            text="Probability of showing a stinger flashcard",
+            font=self.gallery_font,
+        ).pack(anchor=W, pady=(5, 5))
+
+        self.percent_meter = ttk.Meter(
+            frame,
+            amountused=self.storage.config["percent"],
+            amounttotal=100,
+            metersize=150,
+            bootstyle="success",
+            textright="%",
+            meterthickness=15,
+            interactive=True,
         )
+
+        self.percent_meter.pack(anchor=W, padx=50, pady=5)
+
+        def on_percent_change(*args):
+            value = int(self.percent_meter.amountusedvar.get())
+            self.storage.config["percent"] = value
+            self.new_config = True
+
+        self.percent_meter.amountusedvar.trace_add("write", on_percent_change)
+
+        ttk.Separator(frame).pack(fill=X, pady=5)
+
+        # --- Stingers ---
+        ttk.Label(
+            frame, text="Add A Stinger Flashcard", font=self.gallery_font
+        ).pack(anchor=W, pady=(10, 25))
+        stinger_btn_bar = ttk.Frame(frame)
+        stinger_btn_bar.pack(anchor=W, pady=(0, 4))
+        self._stinger_delete_button = ttk.Button(
+            stinger_btn_bar,
+            text="Delete",
+            bootstyle="danger",
+            command=self.toggle_stinger_edit_mode,
+        )
+        self._stinger_delete_button.pack(side=LEFT, padx=(5, 5))
+        ttk.Button(
+            stinger_btn_bar,
+            text="Browse...",
+            bootstyle="primary",
+            command=self.add_stinger,
+        ).pack(side=LEFT)
+        self._stinger_warning = ttk.Label(frame, text="", foreground="red")
+        self._stinger_warning.pack(anchor=W, pady=10)
+
+        ttk.Label(
+            frame,
+            text="Double click the name to edit it.",
+            font=self.setting_font,
+        ).pack(anchor=W, padx=(20, 0))
+        self.stinger_canvas = ttk.Canvas(frame)
+        self.stinger_canvas.pack(fill=X, pady=5)
+
+        self._stinger_refresh_id = None
+        self.stinger_canvas.bind(
+            "<Configure>", lambda e: self._schedule_stinger_refresh()
+        )
+
+        ttk.Separator(frame).pack(fill=X, pady=10)
+        # -----------------------------------------
+
+        ## --- Font ---
+        ttk.Label(frame, text="Font", font=self.gallery_font).pack(anchor=W)
 
         self.selected_font = tk.StringVar(value=self.fonts[0])
         self.selected_font.trace_add("write", self.update_font)
 
         font_row = ttk.Frame(frame)
-        font_row.pack(anchor=W, pady=(2, 5))
+        font_row.pack(anchor=W)
         font_row.columnconfigure(0, weight=1, uniform="font_row")
         # font_row.columnconfigure(1, weight=1, uniform="font_row")
 
@@ -973,12 +1126,12 @@ class FlashCardViewer(ttk.Frame):
             state="readonly",
         )
 
-        font_box.grid(row=0, column=0, padx=(10, 10), pady=(10, 10))
+        font_box.grid(row=0, column=0, padx=50)
 
         self.preview_canvas = tk.Canvas(
             font_row,
-            width=800,
-            height=self.caption_font_clearance,
+            width=300,
+            height=self.preview_font_clearance,
             highlightthickness=0,
         )
         self.preview_canvas.grid(row=0, column=1)
@@ -988,10 +1141,12 @@ class FlashCardViewer(ttk.Frame):
             self.preview_canvas.winfo_reqheight() // 2,
             text="Font Preview",
             fill=self.style.colors.fg,
-            font=self.caption_font,
+            font=self.preview_font,
             anchor="center",
         )
 
+        ttk.Separator(frame).pack(fill=X, pady=10)
+        ## --- Theme ---
         themes = [t.title() for t in self.style.theme_names()]
         theme_var = ttk.StringVar(value=self.style.theme_use().title())
 
@@ -1021,6 +1176,8 @@ class FlashCardViewer(ttk.Frame):
             self.new_config = True
 
         theme_box.bind("<<ComboboxSelected>>", change_theme)
+
+        ttk.Separator(frame).pack(fill=X, pady=10)
 
         # --- Image Types ---
         def update_image_types(*args):
@@ -1055,81 +1212,7 @@ class FlashCardViewer(ttk.Frame):
                 side=LEFT, padx=(50, 10)
             )
 
-        ttk.Label(
-            frame,
-            text="Probability of showing a stinger flashcard",
-            font=self.gallery_font,
-        ).pack(anchor=W, pady=(20, 5))
-
-        self.percent_meter = ttk.Meter(
-            frame,
-            amountused=self.storage.config["percent"],
-            amounttotal=100,
-            metersize=150,
-            bootstyle="success",
-            textright="%",
-            meterthickness=15,
-            interactive=True,
-        )
-
-        self.percent_meter.pack(anchor=W, padx=50, pady=10)
-
-        def on_percent_change(*args):
-            value = int(self.percent_meter.amountusedvar.get())
-            self.storage.config["percent"] = value
-            self.new_config = True
-
-        self.percent_meter.amountusedvar.trace_add("write", on_percent_change)
-
-        ttk.Separator(frame).pack(fill=X, pady=10)
-
-        # --- Stingers ---
-        ttk.Label(
-            frame, text="Add A Stinger Flashcard", font=self.gallery_font
-        ).pack(anchor=W, pady=(10, 25))
-        stinger_btn_bar = ttk.Frame(frame)
-        stinger_btn_bar.pack(anchor=W, pady=(0, 4))
-        self._stinger_delete_button = ttk.Button(
-            stinger_btn_bar,
-            text="Delete",
-            bootstyle="danger",
-            command=self.toggle_stinger_edit_mode,
-        )
-        self._stinger_delete_button.pack(side=LEFT, padx=(5, 5))
-        ttk.Button(
-            stinger_btn_bar,
-            text="Browse...",
-            bootstyle="primary",
-            command=self.add_stinger,
-        ).pack(side=LEFT)
-        self._stinger_warning = ttk.Label(frame, text="", foreground="red")
-        self._stinger_warning.pack(anchor=W, pady=10)
-
-        ttk.Label(
-            frame,
-            text="Double click the name to edit it.",
-            font=self.setting_font,
-        ).pack(anchor=W, padx=(20, 0), pady=(0, 10))
-        # Scrollable stinger canvas
-        scroll_wrapper = ttk.Frame(frame)
-        scroll_wrapper.pack(fill=BOTH, expand=True)
-
-        scrollbar = ttk.Scrollbar(scroll_wrapper, orient=VERTICAL)
-        scrollbar.pack(side=RIGHT, fill=Y)
-
-        self.stinger_canvas = ttk.Canvas(
-            scroll_wrapper, yscrollcommand=scrollbar.set
-        )
-        self.stinger_canvas.pack(side=LEFT, fill=BOTH, expand=True)
-        scrollbar.configure(command=self.stinger_canvas.yview)
-
-        self._stinger_refresh_id = None
-        self.stinger_canvas.bind(
-            "<Configure>", lambda e: self._schedule_stinger_refresh()
-        )
-
-
-        return frame
+        return outer
 
     def save_app_settings(self):
         # not actually called
@@ -1231,7 +1314,7 @@ class FlashCardViewer(ttk.Frame):
 
     def refresh_stinger_grid(self):
         canvas = self.stinger_canvas
-        if hasattr(self, '_stinger_tag_funcids'):
+        if hasattr(self, "_stinger_tag_funcids"):
             for tag, seq, funcid in self._stinger_tag_funcids:
                 canvas.tag_unbind(tag, seq, funcid)
         self._stinger_tag_funcids = []
@@ -1291,13 +1374,17 @@ class FlashCardViewer(ttk.Frame):
                 tags=(f"stinger_text_{i}",),
             )
 
-            self._stinger_tag_funcids.append((
-                f"stinger_text_{i}", "<Double-Button-1>",
-                canvas.tag_bind(
-                    f"stinger_text_{i}", "<Double-Button-1>",
-                    lambda e, s=stinger: self.edit_stinger_name(e, s),
-                ),
-            ))
+            self._stinger_tag_funcids.append(
+                (
+                    f"stinger_text_{i}",
+                    "<Double-Button-1>",
+                    canvas.tag_bind(
+                        f"stinger_text_{i}",
+                        "<Double-Button-1>",
+                        lambda e, s=stinger: self.edit_stinger_name(e, s),
+                    ),
+                )
+            )
 
             if self.stinger_edit_mode:
                 canvas.create_image(
@@ -1307,17 +1394,25 @@ class FlashCardViewer(ttk.Frame):
                     anchor=NE,
                     tags=(f"stinger_trash_{i}",),
                 )
-                self._stinger_tag_funcids.append((
-                    f"stinger_trash_{i}", "<Button-1>",
-                    canvas.tag_bind(
-                        f"stinger_trash_{i}", "<Button-1>",
-                        lambda e, p=stinger["image"].path: self.delete_stinger(p),
-                    ),
-                ))
+                self._stinger_tag_funcids.append(
+                    (
+                        f"stinger_trash_{i}",
+                        "<Button-1>",
+                        canvas.tag_bind(
+                            f"stinger_trash_{i}",
+                            "<Button-1>",
+                            lambda e, p=stinger["image"].path: (
+                                self.delete_stinger(p)
+                            ),
+                        ),
+                    )
+                )
 
-        total_rows = max(1, -(-len(self.stingers) // cols)) if self.stingers else 1
+        total_rows = (
+            max(1, -(-len(self.stingers) // cols)) if self.stingers else 1
+        )
         total_height = total_rows * (tile_height + padding) + padding
-        canvas.configure(scrollregion=(0, 0, canvas.winfo_width(), total_height))
+        canvas.configure(height=total_height)
 
     # -------------------------
     # Clipboard helpers
@@ -1342,8 +1437,10 @@ class FlashCardViewer(ttk.Frame):
 
 def main():
     import sys
+
     if "-v" in sys.argv or "--version" in sys.argv:
         from importlib.metadata import version
+
         print(version("flashcard-viewer"))
         return
 
