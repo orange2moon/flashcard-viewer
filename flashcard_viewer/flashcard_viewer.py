@@ -13,6 +13,7 @@ from pathlib import Path
 import random
 from PIL import Image, ImageTk
 import tkinter.font as tkfont
+import time
 
 from flashcard_viewer.data_storage import DataStorage, GalleryImage
 from flashcard_viewer.image_folder_browser import ImageFolderBrowser
@@ -130,6 +131,7 @@ class FlashCardViewer(ttk.Frame):
         font = self.storage.config.get("font", None)
         if font and font in self.fonts:
             self.caption_font.config(family=font)
+            self.preview_font.config(family=font)
 
     # -------------------------
     # Gallery View
@@ -311,7 +313,6 @@ class FlashCardViewer(ttk.Frame):
             )
 
             # Draw name text
-
             canvas.create_text(
                 x + tile_width // 2,
                 y + tile_height - 20,
@@ -881,10 +882,6 @@ class FlashCardViewer(ttk.Frame):
         # prevent showing a stinger flashcard back to back
         if not self.show_stinger:
             percent = self.storage.config.get("percent", 20)
-            if percent > 100:
-                percent = 100
-            elif percent < 0:
-                percent = 0
 
             self.show_stinger = True
             return random.random() < percent / 100
@@ -1076,7 +1073,13 @@ class FlashCardViewer(ttk.Frame):
 
         def on_percent_change(*args):
             value = int(self.percent_meter.amountusedvar.get())
-            self.storage.config["percent"] = value
+
+            if value > 100:
+                value = 100
+            elif value < 0:
+                value = 0
+
+            self.storage.config["value"] = value
             self.new_config = True
 
         self.percent_meter.amountusedvar.trace_add("write", on_percent_change)
@@ -1086,7 +1089,14 @@ class FlashCardViewer(ttk.Frame):
         ## --- Font ---
         ttk.Label(frame, text="Font", font=self.gallery_font).pack(anchor=W)
 
-        self.selected_font = tk.StringVar(value=self.fonts[0])
+
+        current_font = self.storage.config.get("font", None)
+        if current_font and current_font in self.fonts:
+            self.selected_font = tk.StringVar(value=current_font)
+        else:
+            self.selected_font = tk.StringVar(value=self.fonts[0])
+
+
         self.selected_font.trace_add("write", self.update_font)
 
         font_row = ttk.Frame(frame)
@@ -1480,6 +1490,7 @@ def main():
         root.geometry("970x970")
 
     app = FlashCardViewer(root)
+    random.seed(int(time.time() * 1_000_000) & 0xFFFF_FFFF)
     root.bind("<space>", app.next_card)
     root.bind("<Right>", app.next_card)
     root.bind("<Left>", app.prev_card)
