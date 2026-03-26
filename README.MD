@@ -25,6 +25,9 @@ I will probably change this behavior soon because it can be confusing.
 ## Requirements
 
 1. Python 3.14+
+2. uv or pipx
+    - [uv](https://docs.astral.sh/uv/)
+    - [pipx](https://pipx.pypa.io/stable/)
 2. tkinter
     - On Fedora this is the package "python3-tkinter"
     - It is a standard python library, but it is not always included in the interpreter distribution.
@@ -42,9 +45,11 @@ linux-gnome-install.sh
 ```
 
 The script `linux-gnome-install.sh` does the following
-1. Edits the flashcard-viewer.desktop file and installs it for the local user.
-2. copies app assets to ~/.local/share/flashcard-viewer/assets
-3. Installs an app icon for the local user
+1. Checks for pipx or uv
+2. Prompts to install flashcard-viewer using pipx or uv.
+3. Edits the flashcard-viewer.desktop file and installs it for the local user.
+4. copies app assets to ~/.local/share/flashcard-viewer/assets
+5. Installs an app icon for the local user
 
 ## License
 
