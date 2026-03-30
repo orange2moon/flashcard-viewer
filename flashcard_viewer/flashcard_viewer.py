@@ -15,7 +15,7 @@ from PIL import Image, ImageTk
 import tkinter.font as tkfont
 import time
 
-from flashcard_viewer.data_storage import DataStorage, GalleryImage
+from flashcard_viewer.data_storage import DataStorage
 from flashcard_viewer.image_folder_browser import ImageFolderBrowser
 from flashcard_viewer.image_file_browser import ImageFileBrowser
 from flashcard_viewer.data_storage import SortOrder
@@ -517,10 +517,17 @@ class FlashCardViewer(ttk.Frame):
                 captions=captions_var.get(),
                 stingers=selected_stingers,
             )
+
+
             for img_path_str, iname_var in img_name_vars.items():
                 self.storage.save_image_name(
                     gallery["path"], Path(img_path_str), iname_var.get()
                 )
+
+            id = gallery.get("id")
+            if id and id == self.current_id:
+                self.update_state(id)
+
             _restore_gallery_scroll()
             canvas.delete("settings_popup")
             canvas.unbind("<Button-1>")
@@ -822,11 +829,13 @@ class FlashCardViewer(ttk.Frame):
                 compound="top",
             )
 
-    def open_gallery(self, path):
-
-        gallery = self.storage.scan_gallery(Path(path))
-        if not gallery or not gallery["valid"]:
+    def update_state(self, gallery_id:int):
+        if not isinstance(gallery_id, int):
             return
+
+        gallery = self.storage.get_gallery(gallery_id)
+        if not gallery or not gallery["valid"]:
+            return 
 
         if self.current_images and len(self.current_images) > 0:
             for gimage in self.current_images:
@@ -836,6 +845,9 @@ class FlashCardViewer(ttk.Frame):
             for simage in self.current_stingers:
                 simage.close()
 
+        # This could be done in a function 
+        # update_state
+        self.current_id = gallery.get("id", [])
         self.current_images = gallery.get("images", [])
         self.sort = gallery.get("sort", SortOrder.RANDOM)
         self.loop = gallery.get("loop", True)
@@ -870,8 +882,25 @@ class FlashCardViewer(ttk.Frame):
         if not self.loop:
             self.current_images.append(self.storage.end_flashcard)
 
-        self.current_image_index = 0
         self.current_image_index_max = len(self.current_images)
+
+        if not self.current_image_index:
+            self.current_image_index = 0
+
+        # Can leave this out because the class will automatically 
+        # handle loading any image that had been unloaded
+        #self.current_image = self.current_images[self.current_image_index]
+
+
+    def open_gallery(self, path):
+
+        gallery = self.storage.scan_gallery(Path(path))
+        if not gallery or not gallery["valid"]:
+            return
+
+        self.update_state(gallery.get("id", None))
+
+        self.current_image_index = 0
         self.current_image = self.current_images[self.current_image_index]
 
         self.noteb.select(self.show_frame)
@@ -912,6 +941,10 @@ class FlashCardViewer(ttk.Frame):
             self.current_image_index = (
                 self.current_image_index - 1
             ) % self.current_image_index_max
+
+            if self.current_image_index == 0 and self.sort == SortOrder.RANDOM:
+                random.shuffle(self.current_images)
+
             self.current_image = self.current_images[self.current_image_index]
             self.show_card()
 
@@ -937,6 +970,10 @@ class FlashCardViewer(ttk.Frame):
             self.current_image_index = (
                 self.current_image_index + 1
             ) % self.current_image_index_max
+
+            if self.current_image_index == 0 and self.sort == SortOrder.RANDOM:
+                random.shuffle(self.current_images)
+
             self.current_image = self.current_images[self.current_image_index]
             self.show_card()
 
@@ -1089,13 +1126,11 @@ class FlashCardViewer(ttk.Frame):
         ## --- Font ---
         ttk.Label(frame, text="Font", font=self.gallery_font).pack(anchor=W)
 
-
         current_font = self.storage.config.get("font", None)
         if current_font and current_font in self.fonts:
             self.selected_font = tk.StringVar(value=current_font)
         else:
             self.selected_font = tk.StringVar(value=self.fonts[0])
-
 
         self.selected_font.trace_add("write", self.update_font)
 

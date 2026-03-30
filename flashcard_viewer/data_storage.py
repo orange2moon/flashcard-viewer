@@ -105,6 +105,7 @@ class DataStorage:
             Path.home() / ".local" / "share" / "flashcard-viewer" / "assets"
         )
         self.STINGER_DIR = self.CACHE_DIR / "stingers"
+        self.USER_DIR = None
 
         if not self.BASE_PATH.is_dir():
             self.BASE_PATH.mkdir(parents=True, exist_ok=True)
@@ -377,6 +378,7 @@ class DataStorage:
 
     def list_stingers(self):
         """Get all of the data from the stingers table
+        returns an list of stinger_dict
         path: the path to the image file
         name: the canonical name for the stinger
         icon: the 400x400 icon image file
@@ -398,7 +400,7 @@ class DataStorage:
         1. inputs
         id:<int> the id of the stinger
 
-        2. Outputs: stinger_dict
+        2. Outputs one: stinger_dict
         id:<int>
         image:<GalleryImage>
         icon:<GalleryImage>
@@ -423,6 +425,7 @@ class DataStorage:
         return stinger
 
     def get_stingers_for_gallery(self, gallery_id):
+        """returns a list of stinger_dict or an empty list"""
         stinger_id_list = []
         with sqlite3.connect(self.db_path) as conn:
             res = conn.execute(
@@ -724,6 +727,28 @@ class DataStorage:
                     galleries.append(gallery)
 
         return galleries
+
+    def get_gallery(self, gallery_id):
+        """Scan one gallery and return its metadata."""
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA foreign_keys = ON")
+            res = conn.execute(
+                "SELECT id, path, name, icon, sort, loop, captions FROM galleries WHERE id = ?",
+                (gallery_id,),
+            )
+
+            row = res.fetchone()
+
+            if row is None:
+                return None
+            else:
+                if row:
+                    id, path, name, icon, sort, loop, captions = row
+                    return self.gallery_query_to_dict(
+                        id, path, name, icon, sort, loop, captions
+                    )
 
     def scan_gallery(self, gallery_path):
         """Scan one gallery and return its metadata."""

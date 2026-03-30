@@ -1,17 +1,15 @@
-# ---------------------------
+notes.md
+notes2.txt
+/flashcard_viewer/migrate
 
 # Python bytecode
-
 # ---------------------------
 
 __pycache__/
 *.py[cod]
 *$py.class
 
-# ---------------------------
-
 # Virtual environments
-
 # ---------------------------
 
 .venv/
@@ -20,10 +18,7 @@ env/
 ENV/
 .virtualenv/
 
-# ---------------------------
-
 # Build / packaging
-
 # ---------------------------
 
 build/
@@ -33,19 +28,13 @@ dist/
 *.egg
 pip-wheel-metadata/
 
-# ---------------------------
-
 # Installer logs
-
 # ---------------------------
 
 pip-log.txt
 pip-delete-this-directory.txt
 
-# ---------------------------
-
 # Test / coverage
-
 # ---------------------------
 
 .coverage
@@ -58,28 +47,19 @@ coverage.xml
 *.py,cover
 htmlcov/
 
-# ---------------------------
-
 # Type checkers
-
 # ---------------------------
 
 .mypy_cache/
 .pyre/
 .pytype/
 
-# ---------------------------
-
 # Jupyter
-
 # ---------------------------
 
 .ipynb_checkpoints
 
-# ---------------------------
-
 # IDE / editors
-
 # ---------------------------
 
 .vscode/
@@ -88,27 +68,18 @@ htmlcov/
 *.swo
 *~
 
-# ---------------------------
-
 # OS junk
-
 # ---------------------------
 
 .DS_Store
 Thumbs.db
 
-# ---------------------------
-
 # Logs
-
 # ---------------------------
 
 *.log
 
-# ---------------------------
-
 # Local config
-
 # ---------------------------
 
 .env
@@ -116,23 +87,14 @@ Thumbs.db
 *.local
 .python-version
 
-# ---------------------------
-
 # Database files
-
 # ---------------------------
 
 *.sqlite3
 *.db
 
-# ---------------------------
-
 # Temporary files
-
 # ---------------------------
 
 tmp/
 temp/
-notes.md
-notes2.txt
-/flashcard_viewer/migrate
