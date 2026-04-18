@@ -69,6 +69,7 @@ class FlashCardViewer(ttk.Frame):
         # application state
         self.use_stingers = False
         self._resize_job = None
+        self.current_id = None
         self.current_images = []
         self.current_stingers = []
         self.show_stinger = False
@@ -88,7 +89,7 @@ class FlashCardViewer(ttk.Frame):
         self.noteb.unbind_class("TNotebook", "<Left>")
         self.noteb.unbind_class("TNotebook", "<Right>")
 
-        self.gallery_frame = self.gallery(self.noteb)
+        self.gallery_frame = self.gallery_init(self.noteb)
         self.show_frame = self.show(self.noteb)
         self.settings_frame = self.settings(self.noteb)
 
@@ -158,7 +159,11 @@ class FlashCardViewer(ttk.Frame):
             self.after_cancel(self._gallery_refresh_id)
         self._gallery_refresh_id = self.after(50, self.refresh_gallery_grid)
 
-    def gallery(self, notebook):
+    # Mousewheel scrolling
+    def on_gallery_mousewheel(self, e):
+        self.gallery_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+
+    def gallery_init(self, notebook):
         frame = ttk.Frame(notebook, padding=10)
 
         # --- Scrollable area ---
@@ -179,9 +184,17 @@ class FlashCardViewer(ttk.Frame):
             (0, 0), window=self.gallery_container, anchor=NW
         )
 
-        # Update scroll region whenever the gallery content changes size
+        # Update scroll region whenever the canvas is resized
         def on_frame_configure(e):
-            canvas.configure(scrollregion=canvas.bbox(ALL))
+            bbox = canvas.bbox(ALL)
+            if bbox:
+                canvas_height = canvas.winfo_height()
+                content_height = bbox[3]
+                if content_height <= canvas_height:
+                    canvas.configure(scrollregion=(0, 0, bbox[2], canvas_height))
+                    canvas.yview_moveto(0)
+                else:
+                    canvas.configure(scrollregion=(0, 0, bbox[2], content_height))
 
         def on_canvas_resize(e):
             canvas.itemconfig(canvas_window, width=e.width)
@@ -195,13 +208,8 @@ class FlashCardViewer(ttk.Frame):
             lambda e: (on_frame_configure(e), self._schedule_gallery_refresh()),
         )
 
-        # Mousewheel scrolling
-        def on_mousewheel(e):
-            if self.gallery_container.winfo_height() > canvas.winfo_height():
-                canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
-
-        self._gallery_mousewheel = on_mousewheel
-        canvas.bind_all("<MouseWheel>", on_mousewheel)
+        self._gallery_mousewheel = self.on_gallery_mousewheel
+        canvas.bind_all("<MouseWheel>", self.on_gallery_mousewheel)
 
         # --- Button bar stays OUTSIDE the canvas, so it doesn't scroll ---
         button_bar = ttk.Frame(frame)
@@ -224,6 +232,9 @@ class FlashCardViewer(ttk.Frame):
         add_button.pack(side=RIGHT)
 
         return frame
+
+    def _restore_gallery_scroll(self):
+        self.gallery_canvas.bind_all("<MouseWheel>", self._gallery_mousewheel)
 
     def rounded_rect_points(self, x, y, w, h, radius):
         """Generate points for a rounded rectangle."""
@@ -408,7 +419,13 @@ class FlashCardViewer(ttk.Frame):
         # Update scroll region
         total_rows = -(-len(self.galleries) // cols)  # ceiling division
         total_height = total_rows * (tile_height + padding) + padding
-        canvas.configure(scrollregion=(0, 0, canvas.winfo_width(), total_height))
+        canvas_height = canvas.winfo_height()
+        if total_height <= canvas_height:
+            canvas.configure(scrollregion=(0, 0, canvas.winfo_width(), canvas_height))
+            canvas.yview_moveto(0)
+        else:
+            canvas.configure(scrollregion=(0, 0, canvas.winfo_width(), total_height))
+        self._restore_gallery_scroll()
 
     def _add_trash_icon(self, img_label, image_frame, gallery):
         trash = ttk.Label(
@@ -501,8 +518,6 @@ class FlashCardViewer(ttk.Frame):
         button_bar = ttk.Frame(frame)
         button_bar.pack(side=BOTTOM, fill=X, pady=(5, 0))
 
-        def _restore_gallery_scroll():
-            canvas.bind_all("<MouseWheel>", self._gallery_mousewheel)
 
         def save_and_close():
             selected_stingers = [
@@ -528,17 +543,16 @@ class FlashCardViewer(ttk.Frame):
             if id and id == self.current_id:
                 self.update_state(id)
 
-            _restore_gallery_scroll()
             canvas.delete("settings_popup")
             canvas.unbind("<Button-1>")
             frame.destroy()
             self.refresh_gallery_grid(new=True)
 
         def close():
-            _restore_gallery_scroll()
             canvas.delete("settings_popup")
             canvas.unbind("<Button-1>")
             frame.destroy()
+            self._restore_gallery_scroll()
 
         ttk.Button(
             button_bar,
@@ -1077,9 +1091,9 @@ class FlashCardViewer(ttk.Frame):
                 rx <= x < rx + outer.winfo_width()
                 and ry <= y < ry + outer.winfo_height()
             ):
-                scroll_canvas.unbind_all("<MouseWheel>")
                 scroll_canvas.unbind_all("<Button-4>")
                 scroll_canvas.unbind_all("<Button-5>")
+                self._restore_gallery_scroll()
 
         outer.bind("<Enter>", _bind_scroll, add="+")
         outer.bind("<Leave>", _unbind_scroll, add="+")
